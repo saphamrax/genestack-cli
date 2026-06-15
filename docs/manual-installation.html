@@ -1,0 +1,2057 @@
+<html><head><style>body {
+   color: black;
+}
+</style></head><body><h1 id="rackspace-private-cloud-installation-training-manual">Rackspace Private Cloud Installation Training Manual</h1>
+<hr>
+<h1 id="target-hosts">Target hosts</h1>
+<h2 id="target-hosts-configuration">Target hosts Configuration</h2>
+<p>The Rackspace OpenStack Enterprise installation
+process requires at least five target hosts to contain the OpenStack
+environment and supporting infrastructure. Perform the following tasks
+On each target host:</p>
+<ul>
+<li><p>Name the target hosts</p>
+</li>
+<li><p>Install the operating system</p>
+</li>
+<li><p>Configure Secure Shell (SSH) keys</p>
+</li>
+<li><p>Configure the operating system</p>
+</li>
+<li><p>Configure the network</p>
+</li>
+</ul>
+<h2 id="install-the-operating-system">Install the operating system</h2>
+<p>Install the <a href="http://releases.ubuntu.com/24.04">Ubuntu 24.04 LTS Server 64-bit</a>, operating system on the target
+host with at least one network interface configured to access the Internet or suitable local repositories.</p>
+<p>The controller are required to be bootstrapped with the base OS in order to install
+Rackspace OpenStack. Subsequent hosts are bootstraped with the OpenStack Baremetal Service, Ironic.
+This enables a shared control plane for OpenStack guests and Baremetal Services.</p>
+<p><strong><em>On target hosts without local (console) access, we recommend
+adding the Secure Shell (SSH) server packages to the installation.</em></strong></p>
+<h2 id="configure-secure-shell-ssh-keys">Configure Secure Shell (SSH) keys</h2>
+<p>Ansible uses Secure Shell (SSH) to connect the deployment and target
+hosts:</p>
+<pre><code class="lang-bash">ssh-keygen -<span class="hljs-selector-tag">b</span> <span class="hljs-number">4096</span> -t rsa -C <span class="hljs-string">"Ansible Deployment Key"</span>
+
+cat ~/.ssh/id_rsa<span class="hljs-selector-class">.pub</span> &gt;&gt; /root/.ssh/authorized_keys
+chmod <span class="hljs-number">0600</span> /root/.ssh/authorized_keys
+</code></pre>
+<ul>
+<li><p>Copy the contents of the public key file on the deployment host to
+the <code>/root/.ssh/authorized_keys</code> on each target host.</p>
+</li>
+<li><p>Test public key authentication from the deployment host to each
+target host. SSH should provide a shell without asking for a
+password.</p>
+</li>
+</ul>
+<p><em>NOTE</em> In some cases, the root access is not allowed, please enable the SSH key access via</p>
+<pre><code class="lang-bash">echo <span class="hljs-string">"PermitRootLogin without-password"</span> <span class="hljs-meta">&gt;&gt; </span>/etc/ssh/sshd_config
+systemctl restart sshd
+</code></pre>
+<h2 id="configure-the-operating-system">Configure the operating system</h2>
+<p>Check the kernel version, install additional software packages, and
+configure the network time protocol (NTP).</p>
+<p>NTP is no longer required. The hardening role installs and configures chrony
+to provide network time services on all deployments by default.</p>
+<p>Any required host OS configuration and packages to install OpenStack Enterprise
+is automated with the <code>host-setup.yml</code> playbook.
+Before installing any component please upgrade the host OS to install all latest
+patches.</p>
+<p>Once the host setup and kubernetes components are installed the host should be rebooted once to
+use the required kernel and configurations.</p>
+<h2 id="network-configuration">Network Configuration</h2>
+<p><strong>Modify the network configuration</strong></p>
+<p>Beginning with Ubuntu 24.04, only netplan-style configurations are supported.</p>
+<p>!!! Tip
+    If the system was installed by Rackspace KiR, netplan was disabled and need to be restored with</p>
+<pre><code class="lang-bash">rm -f <span class="hljs-regexp">/etc/</span>systemd<span class="hljs-regexp">/system-generators/</span>netplan
+</code></pre>
+<h4 id="ubuntu-netplan">Ubuntu Netplan</h4>
+<ul>
+<li>Modify the netplan <code>/etc/netplan/host-config.yaml</code></li>
+</ul>
+<pre><code class="lang-yaml"><span class="hljs-attr">    network:</span>
+<span class="hljs-attr">        version:</span> <span class="hljs-number">2</span>
+<span class="hljs-attr">        ethernets:</span>
+<span class="hljs-attr">          em49:</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">9000</span>
+<span class="hljs-attr">          p4p1:</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">9000</span>
+<span class="hljs-attr">        bonds:</span>
+<span class="hljs-attr">          bond0:</span>
+<span class="hljs-attr">            interfaces:</span> [ em49, p4p1 ]
+<span class="hljs-attr">            parameters:</span>
+<span class="hljs-attr">              mode:</span> <span class="hljs-number">802.3</span>ad
+<span class="hljs-attr">              lacp-rate:</span> fast
+<span class="hljs-attr">              transmit-hash-policy:</span> layer3+<span class="hljs-number">4</span>
+<span class="hljs-attr">              mii-monitor-interval:</span> <span class="hljs-number">100</span>
+<span class="hljs-attr">            dhcp4:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">9000</span>
+<span class="hljs-attr">        bridges:</span>
+<span class="hljs-attr">          br-host:</span>
+<span class="hljs-attr">            dhcp4:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">1500</span>
+<span class="hljs-attr">            interfaces:</span>
+<span class="hljs-bullet">              -</span> vlan1000
+<span class="hljs-attr">            addresses:</span> [ <span class="hljs-number">10.240</span><span class="hljs-number">.0</span><span class="hljs-number">.51</span>/<span class="hljs-number">22</span> ]
+<span class="hljs-attr">            nameservers:</span>
+<span class="hljs-attr">              addresses:</span> [ <span class="hljs-number">1.1</span><span class="hljs-number">.1</span><span class="hljs-number">.1</span>, <span class="hljs-number">1.0</span><span class="hljs-number">.0</span><span class="hljs-number">.1</span> ]
+<span class="hljs-attr">            routes:</span>
+<span class="hljs-attr">              - to:</span> <span class="hljs-number">0.0</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">0</span>
+<span class="hljs-attr">                via:</span> <span class="hljs-number">10.240</span><span class="hljs-number">.0</span><span class="hljs-number">.1</span>
+<span class="hljs-attr">                metric:</span> <span class="hljs-number">500</span>
+<span class="hljs-attr">          br-storage:</span>
+<span class="hljs-attr">            dhcp4:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">9000</span>
+<span class="hljs-attr">            interfaces:</span>
+<span class="hljs-bullet">              -</span> vlan1030
+<span class="hljs-attr">            addresses:</span> [ <span class="hljs-number">172.29</span><span class="hljs-number">.244</span><span class="hljs-number">.51</span>/<span class="hljs-number">22</span> ]
+<span class="hljs-attr">          br-repl:</span>
+<span class="hljs-attr">            dhcp4:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">9000</span>
+<span class="hljs-attr">            interfaces:</span>
+<span class="hljs-bullet">              -</span> vlan1040
+<span class="hljs-attr">            addresses:</span> [ <span class="hljs-number">172.29</span><span class="hljs-number">.248</span><span class="hljs-number">.51</span>/<span class="hljs-number">22</span> ]
+<span class="hljs-attr">          br-overlay:</span>
+<span class="hljs-attr">            dhcp4:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">9000</span>
+<span class="hljs-attr">            interfaces:</span>
+<span class="hljs-bullet">              -</span> vlan1020
+<span class="hljs-attr">            addresses:</span> [ <span class="hljs-number">172.29</span><span class="hljs-number">.240</span><span class="hljs-number">.51</span>/<span class="hljs-number">22</span> ]
+<span class="hljs-attr">          br-pxe:</span>
+<span class="hljs-attr">            dhcp4:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">1500</span>
+<span class="hljs-attr">            interfaces:</span>
+<span class="hljs-bullet">              -</span> vlan1050
+<span class="hljs-attr">            addresses:</span> [ <span class="hljs-number">172.23</span><span class="hljs-number">.208</span><span class="hljs-number">.5</span>/<span class="hljs-number">22</span> ]
+            <span class="hljs-comment">#openvswitch: {}</span>
+<span class="hljs-attr">        vlans:</span>
+<span class="hljs-attr">          vlan1000:</span>
+<span class="hljs-attr">            id:</span> <span class="hljs-number">1000</span>
+<span class="hljs-attr">            link:</span> bond0
+<span class="hljs-attr">            dhcp4:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">1500</span>
+<span class="hljs-attr">          vlan1010:</span>
+<span class="hljs-attr">            id:</span> <span class="hljs-number">1010</span>
+<span class="hljs-attr">            link:</span> bond0
+<span class="hljs-attr">            dhcp4:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">1500</span>
+<span class="hljs-attr">          vlan1020:</span>
+<span class="hljs-attr">            id:</span> <span class="hljs-number">1020</span>
+<span class="hljs-attr">            link:</span> bond0
+<span class="hljs-attr">            dhcp4:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">9000</span>
+<span class="hljs-attr">          vlan1030:</span>
+<span class="hljs-attr">            id:</span> <span class="hljs-number">1030</span>
+<span class="hljs-attr">            link:</span> bond0
+<span class="hljs-attr">            dhcp4:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">9000</span>
+<span class="hljs-attr">          vlan1040:</span>
+<span class="hljs-attr">            id:</span> <span class="hljs-number">1040</span>
+<span class="hljs-attr">            link:</span> bond0
+<span class="hljs-attr">            dhcp4:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">9000</span>
+<span class="hljs-attr">          vlan1050:</span>
+<span class="hljs-attr">            id:</span> <span class="hljs-number">1050</span>
+<span class="hljs-attr">            link:</span> bond0
+<span class="hljs-attr">            dhcp4:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">            mtu:</span> <span class="hljs-number">1050</span>
+</code></pre>
+<hr>
+<h1 id="configure-deployment">Configure deployment</h1>
+<h1 id="configure-deployment">Configure deployment</h1>
+<h2 id="checkout-intial-deployment-configuration">Checkout intial deployment configuration</h2>
+<ul>
+<li>Download ZIP file of the Genestack-Templates Git Repo Directory. Download the zip file to your LAB root home working_directory</li>
+</ul>
+<pre><code class="lang-bash"><span class="hljs-keyword">cd</span> &lt;home <span class="hljs-built_in">or</span> root home directory&gt;
+unzip <span class="hljs-number">000000</span>-Genestack-Templates-main.zip
+<span class="hljs-keyword">cp</span> -Rp <span class="hljs-symbol">&lt;Path_To_000000-Genestack-Templates-main&gt;</span> /<span class="hljs-keyword">opt</span>/genestack-config
+</code></pre>
+<ul>
+<li>Link defaults into environment specific directory</li>
+</ul>
+<pre><code class="lang-bash">ENV=&lt;LAB_NAME&gt;
+cp -r <span class="hljs-regexp">/opt/g</span>enestack-config<span class="hljs-regexp">/infrastructure/</span>clusters<span class="hljs-regexp">/default /</span>opt<span class="hljs-regexp">/genestack-config/i</span>nfrastructure<span class="hljs-regexp">/clusters/</span><span class="hljs-variable">${ENV}</span>
+ln -sf <span class="hljs-regexp">/opt/g</span>enestack-config<span class="hljs-regexp">/infrastructure/</span>clusters<span class="hljs-regexp">/${ENV}/</span> <span class="hljs-regexp">/etc/g</span>enestack
+</code></pre>
+<ul>
+<li>Create initial runbook and edit it accordingly</li>
+</ul>
+<pre><code class="lang-bash">cp <span class="hljs-regexp">/opt/g</span>enestack-config<span class="hljs-regexp">/templates/</span>README.md <span class="hljs-regexp">/opt/g</span>enestack-config<span class="hljs-regexp">/</span>
+</code></pre>
+<h2 id="download-the-rackspace-openstack-ops">Download the Rackspace OpenStack Ops</h2>
+<ul>
+<li>Download ZIP file of the OpenStack Ops Git Repo Directory</li>
+</ul>
+<pre><code class="lang-bash"><span class="hljs-keyword">cd</span> &lt;home <span class="hljs-built_in">or</span> root home directory&gt;
+unzip openstack-ops.zip
+<span class="hljs-keyword">cp</span> -Rp &lt;Path <span class="hljs-keyword">to</span> openstack-ops direcory&gt; /<span class="hljs-keyword">opt</span>/openstack-ops
+</code></pre>
+<h2 id="checkout-deployment-code">Checkout deployment code</h2>
+<pre><code class="lang-bash">git clone --recurse-submodules -j4 http<span class="hljs-variable">s:</span>//github.<span class="hljs-keyword">com</span>/rackerlabs/genestack /<span class="hljs-keyword">opt</span>/genestack
+
+( <span class="hljs-keyword">cd</span> /<span class="hljs-keyword">opt</span>/genestack &amp;&amp; git checkout release-<span class="hljs-number">2025.4</span> )
+
+
+/<span class="hljs-keyword">opt</span>/genestack/bootstrap.<span class="hljs-keyword">sh</span>
+
+/<span class="hljs-keyword">opt</span>/openstack-ops/bootstrap.<span class="hljs-keyword">sh</span>
+
+<span class="hljs-keyword">source</span> /<span class="hljs-keyword">opt</span>/genestack/scripts/genestack.rc
+</code></pre>
+<h2 id="ansible-configuration">Ansible configuration</h2>
+<p>Modify <code>/etc/genestack/inventory/inventory.yaml</code> and other YAML</p>
+<pre><code class="lang-yaml"><span class="hljs-attr">all:</span>
+<span class="hljs-attr">  vars:</span>
+<span class="hljs-attr">    ansible_port:</span> <span class="hljs-number">22</span>
+<span class="hljs-attr">  hosts:</span>
+<span class="hljs-attr">    user01-ctl01:</span>
+<span class="hljs-attr">      ansible_host:</span> <span class="hljs-number">10.239</span><span class="hljs-number">.20</span><span class="hljs-number">.51</span>
+<span class="hljs-attr">    user01-ctl02:</span>
+<span class="hljs-attr">      ansible_host:</span> <span class="hljs-number">10.239</span><span class="hljs-number">.20</span><span class="hljs-number">.52</span>
+<span class="hljs-attr">    user01-ctl03:</span>
+<span class="hljs-attr">      ansible_host:</span> <span class="hljs-number">10.239</span><span class="hljs-number">.20</span><span class="hljs-number">.53</span>
+<span class="hljs-attr">    user01-compute01:</span>
+<span class="hljs-attr">      ansible_host:</span> <span class="hljs-number">10.239</span><span class="hljs-number">.20</span><span class="hljs-number">.54</span>
+<span class="hljs-attr">    user01-compute02:</span>
+<span class="hljs-attr">      ansible_host:</span> <span class="hljs-number">10.239</span><span class="hljs-number">.20</span><span class="hljs-number">.55</span>
+<span class="hljs-attr">  children:</span>
+<span class="hljs-attr">    k8s_cluster:</span>
+<span class="hljs-attr">      vars:</span>
+<span class="hljs-attr">        cluster_name:</span> cluster.local
+<span class="hljs-attr">        kube_ovn_iface:</span> br-overlay
+<span class="hljs-attr">        kube_ovn_default_interface_name:</span> br-overlay
+<span class="hljs-attr">        kube_ovn_central_hosts:</span> <span class="hljs-string">"<span class="hljs-template-variable">{{ groups['ovn_network_nodes'] }}</span>"</span>
+<span class="hljs-attr">        kube_service_addresses:</span> <span class="hljs-number">10.233</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">18</span>
+<span class="hljs-attr">        kube_pods_subnet:</span> <span class="hljs-number">10.236</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">14</span>
+<span class="hljs-attr">        cert_manager_dns_config:</span>
+<span class="hljs-attr">          nameservers:</span>
+<span class="hljs-bullet">            -</span> <span class="hljs-string">"10.238.20.10"</span>
+<span class="hljs-attr">        upstream_dns_servers:</span>
+<span class="hljs-bullet">          -</span> <span class="hljs-string">"10.238.20.10"</span>
+<span class="hljs-attr">      children:</span>
+<span class="hljs-attr">        kube_control_plane:</span>
+<span class="hljs-attr">          hosts:</span>
+<span class="hljs-attr">            user01-ctl01:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-ctl02:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-ctl03:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">        etcd:</span>
+<span class="hljs-attr">          hosts:</span>
+<span class="hljs-attr">            user01-ctl01:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-ctl02:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-ctl03:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">        kube_node:</span>
+<span class="hljs-attr">          hosts:</span>
+<span class="hljs-attr">            user01-ctl01:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-ctl02:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-ctl03:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-compute01:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-compute02:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">        openstack_control_plane:</span>
+<span class="hljs-attr">          hosts:</span>
+<span class="hljs-attr">            user01-ctl01:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-ctl02:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-ctl03:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">        ovn_network_nodes:</span>
+<span class="hljs-attr">          hosts:</span>
+<span class="hljs-attr">            user01-ctl01:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-ctl02:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-ctl03:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">        cinder_storage_nodes:</span>
+<span class="hljs-attr">          hosts:</span>
+<span class="hljs-attr">            user01-ctl01:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-ctl02:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-ctl03:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">        openstack_compute_nodes:</span>
+<span class="hljs-attr">          vars:</span>
+<span class="hljs-attr">            enable_iscsi:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">            custom_multipath:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">          hosts:</span>
+<span class="hljs-attr">            user01-compute01:</span> <span class="hljs-literal">null</span>
+<span class="hljs-attr">            user01-compute02:</span> <span class="hljs-literal">null</span>
+</code></pre>
+<h2 id="host-entries-and-hostname">Host entries and hostname</h2>
+<pre><code class="lang-bash">ansible -m <span class="hljs-built_in">shell</span> -<span class="hljs-keyword">a</span> <span class="hljs-string">'hostnamectl set-hostname {{ inventory_hostname }}'</span> <span class="hljs-comment">--become all</span>
+ansible -m <span class="hljs-built_in">shell</span> -<span class="hljs-keyword">a</span> <span class="hljs-string">"grep 127.0.0.1 /etc/hosts | sed -i 's/^127.0.0.1.*/127.0.0.1 localhost.localdomain localhost/' /etc/hosts"</span> <span class="hljs-comment">--become all</span>
+ansible -m synchronize all -<span class="hljs-keyword">a</span> <span class="hljs-string">'src=/etc/hosts dest=/etc/hosts'</span>
+</code></pre>
+<hr>
+<h1 id="host-setup">Host Setup</h1>
+<h2 id="host-setup">Host Setup</h2>
+<h2 id="preparation">Preparation</h2>
+<pre><code class="lang-bash">source /opt/genestack/scripts/genestack<span class="hljs-selector-class">.rc</span>
+
+cd /opt/genestack/ansible/playbooks
+ansible-playbook host-setup<span class="hljs-selector-class">.yml</span>
+
+cd /opt/openstack-ops/playbooks
+( /root/.venvs/openstack-ops/bin/ansible-playbook configure-hosts<span class="hljs-selector-class">.yml</span> configure-bash-environment<span class="hljs-selector-class">.yml</span> configure-packagemanager<span class="hljs-selector-class">.yml</span> )
+</code></pre>
+<p>Update and upgrade all nodes:</p>
+<pre><code class="lang-bash">ansible all -m ansible<span class="hljs-selector-class">.builtin</span><span class="hljs-selector-class">.apt</span> -<span class="hljs-selector-tag">a</span> <span class="hljs-string">"update_cache=true upgrade=dist"</span> 
+ansible openstack_compute_nodes -m shell -<span class="hljs-selector-tag">a</span> <span class="hljs-string">'systemctl reboot'</span>
+</code></pre>
+<p>Reboot the controller nodes:</p>
+<pre><code class="lang-bash">ansible openstack_control_plane[<span class="hljs-number">1</span>:<span class="hljs-number">2</span>] -m shell -<span class="hljs-selector-tag">a</span> <span class="hljs-string">'systemctl reboot'</span>
+
+<span class="hljs-selector-id">#Wait</span> <span class="hljs-keyword">for</span> others to come back and reboot local node
+ansible openstack_control_plane[<span class="hljs-number">0</span>] -m shell -<span class="hljs-selector-tag">a</span> <span class="hljs-string">'systemctl reboot'</span>
+</code></pre>
+<h2 id="network-mtu-test">Network MTU test</h2>
+<p>Networking basic tests on all bridges </p>
+<p><strong>br-host</strong></p>
+<pre><code class="lang-bash">ansible all -m <span class="hljs-built_in">shell</span> -<span class="hljs-keyword">a</span> <span class="hljs-string">'ping -c 2 [br-host IP]'</span>
+</code></pre>
+<p><strong>br-overlay</strong></p>
+<pre><code class="lang-bash">ansible all -m <span class="hljs-built_in">shell</span> -<span class="hljs-keyword">a</span> <span class="hljs-string">'ping -c 2 -s 9000 [br-overlay IP]'</span>
+</code></pre>
+<p><strong>br-pxe</strong></p>
+<pre><code class="lang-bash">ansible openstack_control_plane -m <span class="hljs-built_in">shell</span> -<span class="hljs-keyword">a</span> <span class="hljs-string">'ping -c 2 [br-pxe IP]'</span>
+</code></pre>
+<p><strong>br-storage</strong></p>
+<pre><code class="lang-bash">ansible all -m <span class="hljs-built_in">shell</span> -<span class="hljs-keyword">a</span> <span class="hljs-string">'ping -c 2 -s 9000 [br-storage IP]'</span>
+</code></pre>
+<hr>
+<h1 id="kubernetes-install">Kubernetes Install</h1>
+<h2 id="kubernetes-install">Kubernetes Install</h2>
+<h3 id="install-kubectl-and-other-binaries">Install Kubectl and other binaries</h3>
+<pre><code class="lang-bash">cd <span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/submodules/</span>kubespray
+
+curl -LO <span class="hljs-string">"https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"</span>
+curl -LO <span class="hljs-string">"https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl-convert"</span> 
+curl -LO <span class="hljs-string">"https://raw.githubusercontent.com/kubeovn/kube-ovn/release-1.13/dist/images/kubectl-ko"</span>
+
+sudo install -o root -g root -m <span class="hljs-number">0755</span> kubectl <span class="hljs-regexp">/usr/</span>local<span class="hljs-regexp">/bin/</span>kubectl
+sudo install -o root -g root -m <span class="hljs-number">0755</span> kubectl-convert <span class="hljs-regexp">/usr/</span>local<span class="hljs-regexp">/bin/</span>kubectl-convert
+sudo install -o root -g root -m <span class="hljs-number">0755</span> kubectl-ko <span class="hljs-regexp">/usr/</span>local<span class="hljs-regexp">/bin/</span>kubectl-ko
+</code></pre>
+<h2 id="deploy-the-cluster-will-take-around-15-20-minutes-">Deploy the Cluster (will take around 15-20 Minutes)</h2>
+<pre><code class="lang-bash"><span class="hljs-symbol">cd</span> /<span class="hljs-meta">opt</span>/genestack/<span class="hljs-keyword">submodules/kubespray
+</span><span class="hljs-symbol">ansible</span>-playbook cluster.yml
+</code></pre>
+<h2 id="labeling-the-node-to-roles">Labeling the node to roles</h2>
+<h3 id="controller-nodes">Controller Nodes</h3>
+<pre><code class="lang-bash">kubectl label <span class="hljs-keyword">node</span> <span class="hljs-title">$</span>(kubectl get nodes | awk '/controller/ {print $<span class="hljs-number">1</span>}') <span class="hljs-attr">openstack-control-plane=</span>enabled
+kubectl label <span class="hljs-keyword">node</span> <span class="hljs-title">$</span>(kubectl get nodes | awk '/controller/ {print $<span class="hljs-number">1</span>}') <span class="hljs-keyword">node</span><span class="hljs-title">-role</span>.kubernetes.io/<span class="hljs-attr">worker=</span>worker
+</code></pre>
+<h3 id="label-the-openstack-compute-nodes">Label the openstack compute nodes</h3>
+<pre><code class="lang-bash">kubectl label <span class="hljs-keyword">node</span> <span class="hljs-title">$</span>(kubectl get nodes | awk '/compute/ {print $<span class="hljs-number">1</span>}') <span class="hljs-attr">openstack-compute-node=</span>enabled
+</code></pre>
+<h3 id="label-the-openstack-network-nodes-including-compute-">Label the openstack network nodes (including compute)</h3>
+<pre><code class="lang-bash">kubectl label <span class="hljs-keyword">node</span> <span class="hljs-title">$</span>(kubectl get nodes | awk '/controller/ {print $<span class="hljs-number">1</span>}') <span class="hljs-attr">openstack-network-node=</span>enabled
+kubectl label <span class="hljs-keyword">node</span> <span class="hljs-title">$</span>(kubectl get nodes | awk '/compute/ {print $<span class="hljs-number">1</span>}') <span class="hljs-attr">openstack-network-node=</span>enabled
+</code></pre>
+<h3 id="label-the-openstack-storage-nodes">Label the openstack storage nodes</h3>
+<p>The controller nodes are also labeled as storage nodes when cinder-volume is deployed (typically the case)</p>
+<pre><code class="lang-bash">kubectl label <span class="hljs-keyword">node</span> <span class="hljs-title">$</span>(kubectl get nodes | awk '/controller/ {print $<span class="hljs-number">1</span>}') <span class="hljs-attr">openstack-storage-node=</span>enabled
+</code></pre>
+<h3 id="remove-taints-and-labels-from-controller-nodes">Remove taints and labels from controller nodes</h3>
+<p>This will allow openstack pods to run on the controller nodes</p>
+<pre><code class="lang-bash">kubectl taint nodes -l <span class="hljs-attr">openstack-control-plane=</span>enabled \
+  <span class="hljs-keyword">node</span><span class="hljs-title">-role</span>.kubernetes.io/control-plane:NoSchedule-
+</code></pre>
+<p>In addition metallb must be able to announce services from the controller nodes</p>
+<pre><code class="lang-bash">kubectl <span class="hljs-selector-tag">label</span> nodes -l openstack-control-plane=enabled \
+  node<span class="hljs-selector-class">.kubernetes</span><span class="hljs-selector-class">.io</span>/exclude-from-external-load-balancers-
+</code></pre>
+<h3 id="taint-to-computes">Taint to computes</h3>
+<p>!!! Note
+    Reserve the OpenStack Compute Nodes for nova at this time to prevent container placement issues</p>
+<pre><code class="lang-bash">kubectl taint nodes -l <span class="hljs-attr">openstack-compute-node=enabled</span> <span class="hljs-attr">key1=value1:PreferNoSchedule</span>
+</code></pre>
+<p>!!! Warning
+    The K8s contrainers will be pending start as no CNI is installed (KubeOVN).</p>
+<h2 id="kubernetes-cni-kubeovn-">Kubernetes CNI (KubeOVN)</h2>
+<p>Copy example configuration (entire file content)</p>
+<pre><code class="lang-bash">cp <span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/base-helm-configs/</span>kube-ovn<span class="hljs-regexp">/kube-ovn-helm-overrides.yaml \
+   /</span>etc<span class="hljs-regexp">/genestack/</span>helm-configs<span class="hljs-regexp">/kube-ovn/</span>kube-ovn-helm-overrides.yaml
+</code></pre>
+<p>and modify sections as needed, most deployments might use default network CIDR but those can be modified if necessary</p>
+<pre><code class="lang-yaml"><span class="hljs-symbol">    ipv4:</span>
+<span class="hljs-symbol">      POD_CIDR:</span> <span class="hljs-number">10.236</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">16</span> <span class="hljs-meta"># ovn-default CIDR</span>
+<span class="hljs-symbol">      POD_GATEWAY:</span> <span class="hljs-number">10.236</span><span class="hljs-number">.0</span><span class="hljs-number">.1</span> <span class="hljs-meta"># ovn-default CIDR</span>
+<span class="hljs-symbol">      SVC_CIDR:</span> <span class="hljs-number">10.233</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">18</span> <span class="hljs-meta"># Service CIDR</span>
+<span class="hljs-symbol">      JOIN_CIDR:</span> <span class="hljs-number">100.64</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">16</span> <span class="hljs-meta"># join</span>
+<span class="hljs-symbol">    networking:</span>
+<span class="hljs-symbol">      IFACE:</span> <span class="hljs-string">"br-overlay"</span>
+<span class="hljs-symbol">    vlan:</span>
+<span class="hljs-symbol">      VLAN_INTERFACE_NAME:</span> <span class="hljs-string">"br-overlay"</span>
+</code></pre>
+<h3 id="label-nodes-for-kubeovn">Label nodes for KubeOVN</h3>
+<pre><code class="lang-bash">kubectl label <span class="hljs-keyword">node</span> <span class="hljs-title">-l</span> beta.kubernetes.io/<span class="hljs-attr">os=</span>linux kubernetes.io/<span class="hljs-attr">os=</span>linux 
+kubectl label <span class="hljs-keyword">node</span> <span class="hljs-title">-l</span> <span class="hljs-keyword">node</span><span class="hljs-title">-role</span>.kubernetes.io/control-plane kube-ovn/<span class="hljs-attr">role=</span><span class="hljs-keyword">master</span> 
+<span class="hljs-title">kubectl</span> label <span class="hljs-keyword">node</span> <span class="hljs-title">-l</span> ovn.kubernetes.io/ovs_dp_type!=userspace ovn.kubernetes.io/<span class="hljs-attr">ovs_dp_type=</span>kernel
+</code></pre>
+<h3 id="run-the-installation">Run the installation</h3>
+<pre><code class="lang-bash">/<span class="hljs-keyword">opt</span>/genestack/bin/install-kube-ovn.<span class="hljs-keyword">sh</span>
+
+# Wait <span class="hljs-keyword">for</span> <span class="hljs-keyword">all</span> pods <span class="hljs-keyword">to</span> come <span class="hljs-keyword">up</span>
+kubectl <span class="hljs-built_in">get</span> pods -A
+</code></pre>
+<h3 id="verify">Verify</h3>
+<pre><code class="lang-bash">kubectl get subnets<span class="hljs-selector-class">.kubeovn</span><span class="hljs-selector-class">.io</span>
+</code></pre>
+<p>!!! Note
+    The cert-manager pod will be stuck in CrashloopBackOff status until Envoy GatewayAPI service has been installed.</p>
+<h2 id="metallb">Metallb</h2>
+<pre><code class="lang-bash">kubectl apply -f <span class="hljs-meta-keyword">/etc/</span>genestack<span class="hljs-meta-keyword">/manifests/</span>metallb/metallb-namespace.yaml
+<span class="hljs-meta-keyword">/opt/</span>genestack<span class="hljs-meta-keyword">/bin/</span>install-metallb.sh
+</code></pre>
+<p><em>Check for metallb controller</em></p>
+<pre><code class="lang-bash">kubectl --namespace metallb-<span class="hljs-built_in">system</span> <span class="hljs-built_in">get</span> deployment.apps/metallb-controller |<span class="hljs-keyword">grep</span> <span class="hljs-string">"1/1"</span>
+</code></pre>
+<p>Edit /etc/genestack/manifests/metallb/metallb-openstack-service-lb.yml</p>
+<p>!!! Note
+    The following example of the metallb configuration splits a &quot;/24&quot; network into two &quot;/25&quot;
+    subnets and announce different IP ranges for external vs. internal (primary metallb pool) services.
+    The physical interface is typically <strong>br-host</strong> for external services, as the default gateway is configured on it,
+    the internal services can be layered on the same interface or moved to non routed interfaces such as <strong>br-mgmt</strong></p>
+<pre><code class="lang-bash">cat &lt;&lt; EOT &gt; /etc/genestack/manifests/metallb/metallb-openstack-service-lb.yml
+<span class="hljs-meta">---</span>
+<span class="hljs-attr">apiVersion:</span> metallb.io/v1beta1
+<span class="hljs-attr">kind:</span> IPAddressPool
+<span class="hljs-attr">metadata:</span> 
+<span class="hljs-attr">  name:</span> gateway-api-external 
+<span class="hljs-attr">  namespace:</span> metallb-system 
+<span class="hljs-attr">spec:</span>
+<span class="hljs-attr">  addresses:</span> 
+<span class="hljs-bullet">  -</span> <span class="hljs-number">10.230</span><span class="hljs-number">.0</span><span class="hljs-number">.10</span>/<span class="hljs-number">32</span>
+<span class="hljs-attr">  autoAssign:</span> <span class="hljs-literal">false</span>
+<span class="hljs-meta">---</span>
+<span class="hljs-attr">apiVersion:</span> metallb.io/v1beta1
+<span class="hljs-attr">kind:</span> L2Advertisement 
+<span class="hljs-attr">metadata:</span>
+<span class="hljs-attr">  name:</span> openstack-external-advertisement 
+<span class="hljs-attr">  namespace:</span> metallb-system 
+<span class="hljs-attr">spec:</span>
+<span class="hljs-attr">  ipAddressPools:</span> 
+<span class="hljs-bullet">  -</span> gateway-api-external 
+<span class="hljs-attr">  nodeSelectors:</span> <span class="hljs-comment"># Optional block to limit nodes for a given advertisement </span>
+<span class="hljs-attr">  - matchLabels:</span> 
+      node-role.kubernetes.io/worker: worker 
+<span class="hljs-attr">  interfaces:</span> <span class="hljs-comment"># Optional block to limit ifaces used to advertise VIPs</span>
+<span class="hljs-bullet">  -</span> br-host
+<span class="hljs-meta">---</span>
+<span class="hljs-attr">apiVersion:</span> metallb.io/v1beta1
+<span class="hljs-attr">kind:</span> IPAddressPool 
+<span class="hljs-attr">metadata:</span> 
+<span class="hljs-attr">  name:</span> primary 
+<span class="hljs-attr">  namespace:</span> metallb-system 
+<span class="hljs-attr">spec:</span>
+<span class="hljs-attr">    addresses:</span> 
+<span class="hljs-bullet">    -</span> <span class="hljs-number">10.230</span><span class="hljs-number">.0</span><span class="hljs-number">.128</span>/<span class="hljs-number">25</span>
+<span class="hljs-attr">    autoAssign:</span> <span class="hljs-literal">false</span>
+<span class="hljs-meta">---</span>
+<span class="hljs-attr">apiVersion:</span> metallb.io/v1beta1
+<span class="hljs-attr">kind:</span> L2Advertisement 
+<span class="hljs-attr">metadata:</span> 
+<span class="hljs-attr">  name:</span> openstack-internal-advertisement 
+<span class="hljs-attr">  namespace:</span> metallb-system 
+<span class="hljs-attr">spec:</span>
+<span class="hljs-attr">  ipAddressPools:</span> 
+<span class="hljs-bullet">  -</span> primary 
+<span class="hljs-attr">  nodeSelectors:</span> <span class="hljs-comment"># Optional block to limit nodes for a given advertisement - </span>
+<span class="hljs-attr">  -  matchLabels:</span> 
+      node-role.kubernetes.io/worker: worker 
+<span class="hljs-attr">  interfaces:</span> <span class="hljs-comment"># Optional block to limit ifaces used to advertise VIPs </span>
+<span class="hljs-bullet">  -</span> br-host
+EOT
+</code></pre>
+<p>Install the metallb service configuration</p>
+<pre><code class="lang-bash">kubectl apply -f <span class="hljs-regexp">/etc/g</span>enestack<span class="hljs-regexp">/manifests/m</span>etallb<span class="hljs-regexp">/metallb-openstack-service-lb.yml</span>
+</code></pre>
+<h2 id="create-openstack-namespace">Create OpenStack namespace</h2>
+<pre><code>kubectl apply -k <span class="hljs-regexp">/etc/g</span>enestack<span class="hljs-regexp">/kustomize/</span>openstack<span class="hljs-regexp">/base</span>
+</code></pre><h3 id="generate-service-secrets">Generate Service Secrets</h3>
+<p>The service credentials are pre-created and randomized once at environment installation.
+The credentials are persisted inside the file <em>/etc/genestack/kubesecrets.yaml</em> and can be updated
+manually when needed.</p>
+<p>The following command creates all the necessary credentials:</p>
+<pre><code class="lang-bash">/<span class="hljs-string">opt/</span><span class="hljs-string">genestack/</span><span class="hljs-string">bin/</span><span class="hljs-built_in">create-secrets.sh</span> <span class="hljs-built_in">--region</span> <span class="hljs-string">RegionOne
+</span>/<span class="hljs-string">opt/</span><span class="hljs-string">genestack/</span><span class="hljs-string">bin/</span><span class="hljs-built_in">create-skyline-secrets.sh</span>
+</code></pre>
+<h3 id="deploy-generated-secrets">Deploy generated Secrets</h3>
+<pre><code class="lang-bash">kubectl create -f <span class="hljs-regexp">/etc/g</span>enestack<span class="hljs-regexp">/kubesecrets.yaml</span>
+</code></pre>
+<hr>
+<h1 id="the-two-values-above-cover-all-user-deployed-components-in-the-longhorn">The two values above cover all user-deployed components in the Longhorn</h1>
+<h2 id="longhorn">Longhorn</h2>
+<pre><code class="lang-bash">kubectl <span class="hljs-keyword">label</span><span class="bash"> node <span class="hljs-_">-l</span> node-role.kubernetes.io/control-plane longhorn.io/storage-node=enabled
+</span>
+cat &lt;&lt; EOT &gt; /etc/genestack/helm-configs/longhorn/longhorn.yaml
+global:
+  nodeSelector:
+    longhorn.io/storage-node: <span class="hljs-string">"enabled"</span>
+
+defaultSettings:
+  systemManagedComponentsNodeSelector: <span class="hljs-string">"longhorn.io/storage-node:enabled"</span>
+
+<span class="hljs-comment"># The two values above cover all user-deployed components in the Longhorn</span>
+<span class="hljs-comment"># Helm chart and the system-managed components created by Longhorn.</span>
+<span class="hljs-comment"># Individual component overrides can still be added when needed.</span>
+EOT
+</code></pre>
+<h3 id="deploy-longhorn-namespace">Deploy Longhorn Namespace</h3>
+<pre><code class="lang-bash">kubectl apply -f <span class="hljs-regexp">/etc/g</span>enestack<span class="hljs-regexp">/manifests/</span>longhorn<span class="hljs-regexp">/longhorn-namespace.yaml</span>
+</code></pre>
+<p>!!! Warning
+    Ensure that <code>/var/lib/longhorn</code> is mounted on the dedicated partition,
+    not reusing space off <code>/var</code></p>
+<pre><code>Additionally ensure that the iSCSI initiator names are configured per
+[<span class="hljs-string">configure-hosts.yml</span>](<span class="hljs-link">https://github.com/rcbops/openstack-ops/blob/master/playbooks/configure-hosts.yml</span>)
+</code></pre><h3 id="configure-iscsi-initiator">Configure iSCSI initiator</h3>
+<pre><code class="lang-bash"><span class="hljs-keyword">source</span> <span class="hljs-regexp">/opt/</span>openstack-ops<span class="hljs-regexp">/scripts/</span>openstack-ops.rc
+( cd <span class="hljs-regexp">/opt/</span>openstack-ops<span class="hljs-regexp">/playbooks &amp;&amp; ansible-playbook configure-hosts.yml )</span>
+</code></pre>
+<h3 id="install-longhorn">Install Longhorn</h3>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-longhorn.sh
+</code></pre>
+<p>!!! Note
+    Wait for pods to come up</p>
+<pre><code class="lang-bash">kubectl -n longhorn-<span class="hljs-keyword">system</span> <span class="hljs-built_in">get</span> pod -w
+</code></pre>
+<h4 id="check-the-longhorn-nodes">Check the Longhorn Nodes</h4>
+<pre><code class="lang-bash">kubectl -n longhorn-system get nodes<span class="hljs-selector-class">.longhorn</span><span class="hljs-selector-class">.io</span>
+</code></pre>
+<h4 id="create-strorage-classes">Create Strorage classes</h4>
+<pre><code class="lang-bash">cat &lt;&lt; EOT &gt; /etc/genestack/manifests/longhorn/longhorn-general-storageclass.yaml
+<span class="hljs-meta">---</span>
+<span class="hljs-attr">kind:</span> StorageClass
+<span class="hljs-attr">apiVersion:</span> storage.k8s.io/v1
+<span class="hljs-attr">metadata:</span>
+<span class="hljs-attr">  name:</span> general
+<span class="hljs-attr">  annotations:</span>
+    storageclass.kubernetes.io/is-default-class: <span class="hljs-string">"true"</span>
+<span class="hljs-attr">provisioner:</span> driver.longhorn.io
+<span class="hljs-attr">allowVolumeExpansion:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">reclaimPolicy:</span> Delete
+<span class="hljs-attr">volumeBindingMode:</span> Immediate
+<span class="hljs-attr">parameters:</span>
+<span class="hljs-attr">  numberOfReplicas:</span> <span class="hljs-string">"2"</span>  <span class="hljs-comment"># This example uses a single replica, but you can adjust this value as needed</span>
+<span class="hljs-attr">  dataLocality:</span> <span class="hljs-string">"best-effort"</span>
+<span class="hljs-attr">  staleReplicaTimeout:</span> <span class="hljs-string">"2880"</span>
+<span class="hljs-attr">  fromBackup:</span> <span class="hljs-string">""</span>
+<span class="hljs-attr">  fsType:</span> <span class="hljs-string">"ext4"</span>
+EOT
+
+cat &lt;&lt; EOT &gt; /etc/genestack/manifests/longhorn/longhorn-general-multi-attach-storageclass.yaml
+<span class="hljs-meta">---</span>
+<span class="hljs-attr">kind:</span> StorageClass
+<span class="hljs-attr">apiVersion:</span> storage.k8s.io/v1
+<span class="hljs-attr">metadata:</span>
+<span class="hljs-attr">  name:</span> general-multi-attach
+<span class="hljs-attr">  annotations:</span>
+    storageclass.kubernetes.io/is-default-class: <span class="hljs-string">"false"</span>
+<span class="hljs-attr">provisioner:</span> driver.longhorn.io
+<span class="hljs-attr">allowVolumeExpansion:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">reclaimPolicy:</span> Delete
+<span class="hljs-attr">volumeBindingMode:</span> Immediate
+<span class="hljs-attr">parameters:</span>
+<span class="hljs-attr">  numberOfReplicas:</span> <span class="hljs-string">"2"</span>  <span class="hljs-comment"># This example uses a single replica, but you can adjust this value as needed</span>
+<span class="hljs-attr">  dataLocality:</span> <span class="hljs-string">"best-effort"</span>
+<span class="hljs-attr">  staleReplicaTimeout:</span> <span class="hljs-string">"2880"</span>
+<span class="hljs-attr">  fromBackup:</span> <span class="hljs-string">""</span>
+<span class="hljs-attr">  fsType:</span> <span class="hljs-string">"ext4"</span>
+EOT
+</code></pre>
+<h3 id="add-storage-longhorn-storage-classes">Add Storage Longhorn Storage Classes</h3>
+<pre><code class="lang-bash">kubectl apply -f <span class="hljs-meta-keyword">/etc/</span>genestack<span class="hljs-meta-keyword">/manifests/</span>longhorn/longhorn-general-storageclass.yaml
+kubectl apply -f <span class="hljs-meta-keyword">/etc/</span>genestack<span class="hljs-meta-keyword">/manifests/</span>longhorn/longhorn-general-multi-attach-storageclass.yaml
+</code></pre>
+<h4 id="validate-longhorn-pvc-volumes">Validate Longhorn PVC Volumes</h4>
+<pre><code class="lang-bash">wget -qO- https:<span class="hljs-regexp">//</span>raw.githubusercontent.com<span class="hljs-regexp">/longhorn/</span>longhorn<span class="hljs-regexp">/v1.8.0/</span>examples<span class="hljs-regexp">/pod_with_pvc.yaml \
+  | sed 's/</span>storageClassName: longhorn<span class="hljs-regexp">/storageClassName: general/</span><span class="hljs-string">' \
+  | kubectl apply -f -</span>
+</code></pre>
+<p>Check longhorn volumes resource for successfull creation</p>
+<pre><code class="lang-bash">kubectl -n longhorn-system get volumes<span class="hljs-selector-class">.longhorn</span><span class="hljs-selector-class">.io</span>
+</code></pre>
+<hr>
+<h2 id="netapp-iscsi-optional-">NetApp iSCSI (OPTIONAL)</h2>
+<p>The NetApp must be pre configured before attempting the cinder backend installation,
+the following configuration is required:</p>
+<ul>
+<li>Multiple data LIF must be setup per vserver to enable multipath and propper network failver due to bonding</li>
+<li>The iSCSI protocol must be enabled for the data LIFs</li>
+<li>All interfaces and storage VLAN must be configured with a MTU of <em>9000</em></li>
+</ul>
+<p>!!! Note
+    The cinder API must be installed and volume-types added to install any cinder backends,
+    after the initial configuration, the cinder API will be redeployed</p>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-cinder.sh
+</code></pre>
+<h3 id="download-and-trust-netapp-vserver-certificate">Download and trust Netapp vServer certificate</h3>
+<pre><code class="lang-bash">source /opt/genestack/scripts/genestack.rc
+
+# Update <span class="hljs-keyword">and</span> <span class="hljs-keyword">use</span> your local IP Addresses from your netapp vserver
+ansible openstack_control_plane -m lineinfile -a <span class="hljs-string">"path=/etc/hosts regexp='^.* openstack-block1' line='172.24.200.25 openstack-block1'"</span>
+
+openssl s_client -connect openstack-block1:<span class="hljs-number">443</span> -showcerts &lt; /dev/null | awk '/<span class="hljs-keyword">BEGIN</span>/,/<span class="hljs-keyword">END</span>/{ <span class="hljs-keyword">if</span>(/<span class="hljs-keyword">BEGIN</span>/){a++}; <span class="hljs-keyword">out</span>=<span class="hljs-string">"/etc/ssl/certs/netapp-vserver.pem"</span>; print &gt;<span class="hljs-keyword">out</span>}' &amp;&amp;  update-ca-certificates <span class="hljs-comment">--fresh</span>
+ansible openstack_control_plane -m synchronize -a <span class="hljs-symbol">'src</span>=/etc/ssl/certs/netapp-vserver.pem dest=/etc/ssl/certs/netapp-vserver.pem<span class="hljs-string">"</span>
+</code></pre>
+<h3 id="configure-the-cinder-backend">Configure the cinder backend</h3>
+<pre><code>kubectl --namespace openstack exec -ti openstack-admin-client -- openstack volume type create netapp-iscsi --property volume_backend_name=netapp-iscsi
+
+cat &lt;&lt; EOT &gt; /etc/genestack/helm-configs/cinder/cinder.yaml
+<span class="hljs-attr">conf:</span>
+<span class="hljs-attr">  cinder:</span>
+<span class="hljs-attr">    DEFAULT:</span>
+<span class="hljs-attr">      default_availability_zone:</span> az1
+<span class="hljs-attr">      default_volume_type:</span> netapp-iscsi-block1
+<span class="hljs-attr">      enabled_backends:</span> netapp-iscsi-block1
+
+<span class="hljs-attr">  backends:</span>
+<span class="hljs-attr">    netapp-iscsi-block1:</span>
+<span class="hljs-attr">      volume_backend_name:</span> netapp-iscsi
+<span class="hljs-attr">      volume_driver:</span> cinder.volume.drivers.netapp.common.NetAppDriver
+<span class="hljs-attr">      netapp_login:</span> <span class="hljs-string">'&lt;netapp vserver (admin) username&gt;'</span>
+<span class="hljs-attr">      netapp_password:</span> <span class="hljs-string">'&lt;netapp vserver (admin) password&gt;'</span>
+<span class="hljs-attr">      netapp_server_hostname:</span> &lt;netapp vserver managment hostname<span class="hljs-string">&gt;
+</span><span class="hljs-attr">      netapp_server_port:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">      netapp_vserver:</span> &lt;netapp vserver name<span class="hljs-string">&gt;
+</span><span class="hljs-attr">      netapp_storage_family:</span> ontap_cluster
+<span class="hljs-attr">      netapp_storage_protocol:</span> iscsi
+<span class="hljs-attr">      netapp_transport_type:</span> http
+<span class="hljs-attr">      netapp_dedup:</span> <span class="hljs-literal">True</span>
+EOT
+
+<span class="hljs-comment"># Reinstall/Update cinder</span>
+/opt/genestack/bin/install-cinder.sh
+</code></pre><h3 id="optional-enable-multipath-for-nova">Optional: Enable multipath for nova</h3>
+<p>Rackspace defaults eanble multipath by default via a template
+of <code>nova-helm-overrides.yaml</code>.</p>
+<p>Otherwise you can enable multipath like following, the configuration of the multipath configuration
+is already part of the <em>openstack-ops</em> module.</p>
+<pre><code>cat &lt;&lt; EOT &gt; /etc/genestack/helm-configs/nova/nova-helm-overrides.yaml
+<span class="hljs-meta">---</span>
+<span class="hljs-attr">conf:</span>
+<span class="hljs-attr">  nova:</span>
+<span class="hljs-attr">    libvirt:</span>
+<span class="hljs-attr">      volume_use_multipath:</span> <span class="hljs-literal">true</span>
+
+<span class="hljs-attr">  enable_iscsi:</span> <span class="hljs-literal">true</span>
+EOT
+</code></pre><p>!!! Tip
+    If nova is already installed, please update it, otherwise skip this step</p>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-nova.sh
+</code></pre>
+<h3 id="install-the-cinder-volume-service">Install the cinder-volume service</h3>
+<pre><code class="lang-bash"><span class="hljs-keyword">source</span> <span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/scripts/g</span>enestack.rc
+
+cd <span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/ansible/</span>playbooks
+ansible-playbook deploy-cinder-netapp-volumes-reference.yaml
+</code></pre>
+<p>Check if the volume service is installed and running, the default install
+will deploy a clustered backend.</p>
+<pre><code class="lang-bash">kubectl --namespace openstack exec -ti openstack-admin-client -- openstack volume service list
+
++------------------+-------------------------------------------------+------+---------+-------+----------------------------+
+|<span class="hljs-string"> Binary           </span>|<span class="hljs-string"> Host                                            </span>|<span class="hljs-string"> Zone </span>|<span class="hljs-string"> Status  </span>|<span class="hljs-string"> State </span>|<span class="hljs-string"> Updated At                 </span>|
++------------------+-------------------------------------------------+------+---------+-------+----------------------------+
+|<span class="hljs-string"> cinder-scheduler </span>|<span class="hljs-string"> cinder-volume-worker                            </span>|<span class="hljs-string"> az1  </span>|<span class="hljs-string"> enabled </span>|<span class="hljs-string"> up    </span>|<span class="hljs-string"> 2025-07-07T16:38:01.000000 </span>|
+|<span class="hljs-string"> cinder-volume    </span>|<span class="hljs-string"> cinder-volume-netapp-worker@netapp-iscsi-block1 </span>|<span class="hljs-string"> az1  </span>|<span class="hljs-string"> enabled </span>|<span class="hljs-string"> up    </span>|<span class="hljs-string"> 2025-07-07T16:38:01.000000 </span>|
++------------------+-------------------------------------------------+------+---------+-------+----------------------------+
+</code></pre>
+<hr>
+<h1 id="monitoring">Monitoring</h1>
+<h2 id="prometheus">Prometheus</h2>
+<p>!!! Warning
+    Prometheus requries the <code>general</code> storage class to be available.
+    Check previous storage configuration if the <em>general</em> storage class is missing,
+    otherwise the pods will be stuck starting.
+    The default PV size for prometheus of 15Gb is generally not large enough,
+    even for smaller clusters.</p>
+<h3 id="update-pv-size-and-monitoring-metadata">Update PV size and monitoring metadata</h3>
+<pre><code class="lang-bash">cat <span class="hljs-params">&lt;&lt; EOT &gt;</span> <span class="hljs-meta-keyword">/etc/</span>genestack<span class="hljs-meta-keyword">/helm-configs/</span>kube-prometheus-stack/prometheus-helm-overrides.yaml
+<span class="hljs-symbol">defaultRules:</span>
+<span class="hljs-symbol">  additionalRuleLabels:</span>{}
+<span class="hljs-symbol">alertmanager:</span>
+<span class="hljs-symbol">  logLevel:</span> info
+<span class="hljs-symbol">prometheus:</span>
+<span class="hljs-symbol">  prometheusSpec:</span>
+<span class="hljs-symbol">    scrapeConfigSelector:</span>
+<span class="hljs-symbol">      matchLabels:</span>
+<span class="hljs-symbol">        prometheus:</span> system-monitoring-prometheus
+<span class="hljs-symbol">    storageSpec:</span>
+<span class="hljs-symbol">      volumeClaimTemplate:</span>
+<span class="hljs-symbol">        spec:</span>
+<span class="hljs-symbol">          resources:</span>
+<span class="hljs-symbol">            requests:</span>
+<span class="hljs-symbol">              storage:</span> <span class="hljs-number">50</span>Gi
+EOT
+</code></pre>
+<h3 id="install-prometheus">Install prometheus</h3>
+<pre><code class="lang-bash">/<span class="hljs-keyword">opt</span>/genestack/bin/install-kube-prometheus-stack.<span class="hljs-keyword">sh</span>
+
+# Check <span class="hljs-keyword">if</span> the pods come <span class="hljs-keyword">up</span>
+kubectl -n prometheus <span class="hljs-built_in">get</span> pods -<span class="hljs-keyword">l</span> <span class="hljs-string">"release=kube-prometheus-stack"</span>
+</code></pre>
+<h2 id="loki-logging-monitoring">Loki Logging Monitoring</h2>
+<p>Loki requires a object storage backend to write it&#39;s indices similar to elasticsearch.
+At this time only HTTP based object storage systems such as <strong><em>Swift</em></strong> and <strong><em>S3</em></strong> are supported.</p>
+<pre><code class="lang-bash">cp <span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/base-helm-configs/</span>loki<span class="hljs-regexp">/loki-helm-s3-overrides-example.yaml \
+   /</span>etc<span class="hljs-regexp">/genestack/</span>helm-configs<span class="hljs-regexp">/loki/</span>loki-helm-overrides.yaml
+</code></pre>
+<h3 id="s3-backend-configuration-example">S3 Backend configuration Example</h3>
+<p>!!! Note
+    The S3 buckets must be created ahead of using them with Loki.
+    The aws cli can be used to create buckets after installation and configuration.</p>
+<pre><code><span class="hljs-string">It </span><span class="hljs-string">is </span><span class="hljs-string">generally </span><span class="hljs-string">adviseable </span><span class="hljs-string">to </span><span class="hljs-string">setup </span><span class="hljs-string">S3 </span><span class="hljs-string">credentials </span><span class="hljs-string">and </span><span class="hljs-string">buckets </span><span class="hljs-string">per </span><span class="hljs-string">regions/</span><span class="hljs-string">openstack </span><span class="hljs-string">deployment.</span>
+<span class="hljs-string">If </span><span class="hljs-string">the </span><span class="hljs-string">credentials </span><span class="hljs-string">are </span><span class="hljs-string">shared </span><span class="hljs-string">across </span><span class="hljs-string">regions,</span> <span class="hljs-string">ensure </span><span class="hljs-string">that </span><span class="hljs-string">each </span><span class="hljs-string">region </span><span class="hljs-string">is </span><span class="hljs-string">isolated </span><span class="hljs-string">in </span><span class="hljs-string">their </span><span class="hljs-string">respective </span><span class="hljs-string">buckets.</span>
+
+```<span class="hljs-string">bash
+</span>   <span class="hljs-string">pip </span><span class="hljs-string">install </span><span class="hljs-built_in">--user</span> <span class="hljs-string">awscli
+</span>
+   <span class="hljs-string">cat </span>&lt;&lt; <span class="hljs-string">EOT </span>&gt; ~/.<span class="hljs-string">aws/</span><span class="hljs-string">config
+</span>   [<span class="hljs-string">default]</span>
+   <span class="hljs-string">region </span>= <span class="hljs-string">default
+</span>   <span class="hljs-string">EOT
+</span>
+   <span class="hljs-string">cat </span>&lt;&lt; <span class="hljs-string">EOT </span>&gt; ~/.<span class="hljs-string">aws/</span><span class="hljs-string">credentials
+</span>   [<span class="hljs-string">default]</span>
+   <span class="hljs-string">aws_access_key_id </span>= &lt;<span class="hljs-string">access </span><span class="hljs-string">key&gt;</span>
+   <span class="hljs-string">aws_secret_access_key </span>= &lt;<span class="hljs-string">secret </span><span class="hljs-string">key&gt;</span>
+   <span class="hljs-string">EOT
+</span>```
+
+<span class="hljs-string">Once </span><span class="hljs-string">configured </span><span class="hljs-string">check </span><span class="hljs-string">the </span><span class="hljs-string">access </span><span class="hljs-string">with
+</span>
+```<span class="hljs-string">bash
+</span>   <span class="hljs-string">aws </span><span class="hljs-string">s3 </span><span class="hljs-string">ls
+</span>```
+
+<span class="hljs-string">and </span><span class="hljs-string">create </span><span class="hljs-string">the </span><span class="hljs-string">buckets
+</span>
+```<span class="hljs-string">bash
+</span>   <span class="hljs-string">alias </span><span class="hljs-string">aws=</span><span class="hljs-string">'aws --endpoint-url=https://&lt;url&gt;'</span>
+
+   <span class="hljs-string">aws </span><span class="hljs-string">s3api </span><span class="hljs-built_in">create-bucket</span> <span class="hljs-built_in">--bucket</span> <span class="hljs-string">regionone-loki-</span><span class="hljs-string">admin
+</span>   <span class="hljs-string">aws </span><span class="hljs-string">s3api </span><span class="hljs-built_in">create-bucket</span> <span class="hljs-built_in">--bucket</span> <span class="hljs-string">regionone-loki-</span><span class="hljs-string">chunks
+</span>   <span class="hljs-string">aws </span><span class="hljs-string">s3api </span><span class="hljs-built_in">create-bucket</span> <span class="hljs-built_in">--bucket</span> <span class="hljs-string">regionone-loki-</span><span class="hljs-string">ruler
+</span>```
+</code></pre><p>The default configuration does not yet enable the compactor, but it is packaged into the container.
+To enable it use the following example config</p>
+<pre><code class="lang-bash">cat &lt;&lt; EOT &gt; /etc/genestack/helm-configs/loki/loki-helm-overrides.yaml
+<span class="hljs-attr">global:</span>
+<span class="hljs-attr">  dnsService:</span> <span class="hljs-string">"coredns"</span>
+<span class="hljs-attr">minio:</span>
+<span class="hljs-attr">  enabled:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">loki:</span>
+<span class="hljs-attr">  auth_enabled:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">  configStorageType:</span> Secret
+<span class="hljs-attr">  ingester:</span>
+<span class="hljs-attr">    autoforget_unhealthy:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">  compactor:</span>
+<span class="hljs-attr">    retention_enabled:</span> <span class="hljs-literal">true</span>
+    <span class="hljs-comment"># Optional: configure the compactor's working directory if needed</span>
+    <span class="hljs-comment"># working_directory: /data/loki/boltdb-shipper-compactor</span>
+<span class="hljs-attr">  limits_config:</span>
+<span class="hljs-attr">    retention_period:</span> <span class="hljs-number">720</span>h <span class="hljs-comment"># Example: retain logs for 30 days</span>
+<span class="hljs-attr">  storage:</span>
+<span class="hljs-attr">    bucketNames:</span>
+<span class="hljs-attr">      chunks:</span> regionone-loki-admin
+<span class="hljs-attr">      ruler:</span> regionone-loki-ruler
+<span class="hljs-attr">      admin:</span> regionone-loki-chunks
+<span class="hljs-attr">    type:</span> s3
+<span class="hljs-attr">    s3:</span>
+<span class="hljs-attr">      endpoint:</span> https://&lt;url<span class="hljs-string">&gt;
+</span><span class="hljs-attr">      region:</span> default
+<span class="hljs-attr">      secretAccessKey:</span> &lt;secret key<span class="hljs-string">&gt;
+</span><span class="hljs-attr">      accessKeyId:</span> &lt;access key<span class="hljs-string">&gt;
+</span><span class="hljs-attr">      s3ForcePathStyle:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">      insecure:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">monitoring:</span>
+<span class="hljs-attr">  serviceMonitor:</span>
+<span class="hljs-attr">    enabled:</span> <span class="hljs-literal">true</span>
+EOT
+</code></pre>
+<h3 id="logging-agent">Logging Agent</h3>
+<p>!!! Warning
+    Only install fluentd if loki was installed, otherwise skip this as
+    fluentd uses a builtin loki service endpoint as output filter.</p>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-fluentbit.sh
+</code></pre>
+<h4 id="installation">Installation</h4>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-loki.sh
+</code></pre>
+<p>Once Loki is installed and all pods are running, check if data is ingested:</p>
+<pre><code class="lang-bash">~ % <span class="hljs-selector-tag">aws</span> <span class="hljs-selector-tag">s3</span> <span class="hljs-selector-tag">ls</span> <span class="hljs-selector-tag">regionone-loki-chunks</span>
+
+                           <span class="hljs-selector-tag">PRE</span> <span class="hljs-selector-tag">fake</span>/
+                           <span class="hljs-selector-tag">PRE</span> <span class="hljs-selector-tag">index</span>/
+<span class="hljs-selector-tag">2025-08-28</span> <span class="hljs-selector-tag">00</span><span class="hljs-selector-pseudo">:55</span><span class="hljs-selector-pseudo">:47</span>        <span class="hljs-selector-tag">252</span> <span class="hljs-selector-tag">loki_cluster_seed</span><span class="hljs-selector-class">.json</span>
+</code></pre>
+<hr>
+<h1 id="gateway-api-ingress">GATEWAY API Ingress</h1>
+<h2 id="envoy-gateway-api">Envoy Gateway API</h2>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-envoy-gateway.sh
+</code></pre>
+<p>!!! Note
+    Wait for the pods to come up before installing the http routes</p>
+<pre><code>```bash
+kubectl wait deployment --for=condition=Available --all --namespace envoyproxy-gateway-<span class="hljs-keyword">system</span>
+```
+</code></pre><p>The following command will install the flex gateway that servces the HTTP routes to OpenStack:</p>
+<pre><code class="lang-bash">/opt/genestack/bin/setup-envoy-gateway<span class="hljs-selector-class">.sh</span> \
+  --email openstack-enterprise-ops@rackspace<span class="hljs-selector-class">.com</span> \
+  --domain &lt;openstack API domain, example: api<span class="hljs-selector-class">.openstack</span><span class="hljs-selector-class">.rackspace</span><span class="hljs-selector-class">.net</span>&gt;
+</code></pre>
+<p>Check for FQDN like <code>nova.api.openstack.rackspace.net</code></p>
+<pre><code class="lang-bash">kubectl -n openstack <span class="hljs-keyword">get</span> httproute
+</code></pre>
+<p>Check for correct vip from gateway-api-external ipaddresspool</p>
+<pre><code class="lang-bash">kubectl -n envoy-gateway get gateways<span class="hljs-selector-class">.gateway</span><span class="hljs-selector-class">.networking</span><span class="hljs-selector-class">.k8s</span><span class="hljs-selector-class">.io</span> <span class="hljs-attribute">flex</span>-gateway
+</code></pre>
+<p>LetsEncrypt is enabled by the default and uses the challenge method (HTTP01)
+that will be completed over TCP port 80 on the envoy gateway with the
+URL <code>http://&lt;service url&gt;/.well-known/acme-challenge/&lt;token&gt;</code>. Boths ports TCP 80 and 443
+on the outside IP of the ingress controller must be allowed to be connected from
+all source IPs are Letsencrypt operates in the public cloud.</p>
+<p>!!! Note
+    The default configuration will provision LetsEncrypt certificates
+    a static SSL certificate can be installed and override the listener
+    as described below.</p>
+<h2 id="static-ssl-certification-installation">Static SSL Certification Installation</h2>
+<p>In cases where HTTP based challange of Lets Encrypt can&#39;t be used, pre-provisioned SSL certificates can be used.
+Rackspace recommends a wildcard cert for the API domain such as <code>*.rpc.example.com</code>, alternatively you can expose SAN certificates with all API names
+and adding the VPN DNS entries, if Rackspace also provides a VPN concentrator.</p>
+<p>The UI is mainly accessed via <code>skyline.rpc.example.com</code> and <code>keystone.rpc.example.com</code> for the OpenStack API,
+The hostnames of the URLs are fixed but the actual domain can be selected by the customer, we generally use the same domain across all hostnames,
+only the URL for the VPN endpoint can be freely chosen as it is typically provisioned outside the Kubernetes cluster.</p>
+<pre><code>DNS.1 = barbican.rpc.<span class="hljs-built_in">example</span>.com
+DNS.2 = ceilometer.rpc.<span class="hljs-built_in">example</span>.com
+DNS.3 = cinder.rpc.<span class="hljs-built_in">example</span>.com
+DNS.4 = cloudformation.rpc.<span class="hljs-built_in">example</span>.com
+DNS.5 = cloudkitty.rpc.<span class="hljs-built_in">example</span>.com
+DNS.6 = glance.rpc.<span class="hljs-built_in">example</span>.com
+DNS.7 = gnocchi.rpc.<span class="hljs-built_in">example</span>.com
+DNS.8 = heat.rpc.<span class="hljs-built_in">example</span>.com
+DNS.9 = ironic.rpc.<span class="hljs-built_in">example</span>.com
+DNS.10 = keystone.rpc.<span class="hljs-built_in">example</span>.com
+DNS.11 = magnum.rpc.<span class="hljs-built_in">example</span>.com
+DNS.12 = manila.rpc.<span class="hljs-built_in">example</span>.com
+DNS.13 = masakari.rpc.<span class="hljs-built_in">example</span>.com
+DNS.14 = metadata.rpc.<span class="hljs-built_in">example</span>.com
+DNS.15 = neutron.rpc.<span class="hljs-built_in">example</span>.com
+DNS.16 = nova.rpc.<span class="hljs-built_in">example</span>.com
+DNS.17 = novnc.rpc.<span class="hljs-built_in">example</span>.com
+DNS.18 = octavia.rpc.<span class="hljs-built_in">example</span>.com
+DNS.19 = placement.rpc.<span class="hljs-built_in">example</span>.com
+DNS.20 = skyline.rpc.<span class="hljs-built_in">example</span>.com
+DNS.21 = prometheus.rpc.<span class="hljs-built_in">example</span>.com
+DNS.22 = alertmanager.rpc.<span class="hljs-built_in">example</span>.com
+
+# Optional, <span class="hljs-keyword">if</span> exposed externally
+DNS.23 = grafana.rpc.<span class="hljs-built_in">example</span>.com
+
+# If hosted <span class="hljs-keyword">in</span> Rackspace DC <span class="hljs-keyword">and</span> a VPN cert <span class="hljs-built_in">is</span> required
+DNS.24 = vpn.rpc.<span class="hljs-built_in">example</span>.com
+</code></pre><h3 id="convert-existing-cert-to-a-tls-secret">Convert existing cert to a TLS secret</h3>
+<pre><code class="lang-shell">cat &lt;&lt; EOT &gt; <span class="hljs-regexp">/etc/</span>genestack<span class="hljs-regexp">/gateway-api/</span>tls-secret.yaml
+<span class="hljs-string">apiVersion:</span> v1
+<span class="hljs-string">kind:</span> Secret
+<span class="hljs-string">type:</span> kubernetes.io/tls
+<span class="hljs-string">metadata:</span>
+<span class="hljs-symbol">  name:</span> openstack-tls-secret
+<span class="hljs-symbol">  namespace:</span> envoy-gateway
+<span class="hljs-string">data:</span>
+  ca.<span class="hljs-string">crt:</span> `base64 -w0 <span class="hljs-regexp">/root/</span>ssl/&lt;ca certificate&gt;`
+  tls.<span class="hljs-string">crt:</span> `base64 -w0 <span class="hljs-regexp">/root/</span>ssl/&lt;<span class="hljs-keyword">public</span> cert + chain&gt;`
+  tls.<span class="hljs-string">key:</span> `base64 -w0 <span class="hljs-regexp">/root/</span>ssl/&lt;<span class="hljs-keyword">private</span> pem key&gt;`
+EOT
+
+kubectl apply -f <span class="hljs-regexp">/etc/</span>genestack<span class="hljs-regexp">/gateway-api/</span>tls-secret.yaml
+
+sed -i <span class="hljs-string">'s/[a-zA-Z0-9-]*-gw-tls-secret/openstack-tls-secret/g'</span> <span class="hljs-regexp">/etc/</span>genestack<span class="hljs-regexp">/gateway-api/</span>listeners<span class="hljs-comment">/*.json</span>
+</code></pre>
+<p>!!! tip
+    If you update an existing <strong>openstack-tls-secret</strong> secret, please delete it prior to applying it again.
+    An update may otherwise not being triggered inside the envoy-gateway.</p>
+<h3 id="execute-the-regex-to-replace-all-exisitng">Execute the regex to replace all exisitng</h3>
+<p>The running gateway must be switched to use the new secret:</p>
+<pre><code class="lang-shell">kubectl -n envoy-gateway edit gateway flex-gateway
+
+<span class="hljs-symbol">:%s/</span>[a-zA-Z<span class="hljs-number">0</span>-<span class="hljs-number">9</span>-]*-gw-tls-secret/openstack-tls-secret/g
+</code></pre>
+<pre><code class="lang-shell">kubectl -<span class="hljs-built_in">n</span> envoy-gateway get gateway flex-gateway -o yaml |grep tls
+
+    <span class="hljs-built_in">na</span><span class="hljs-symbol">me:</span> cluster-tls
+    <span class="hljs-built_in">t</span><span class="hljs-symbol">ls:</span>
+        <span class="hljs-built_in">na</span><span class="hljs-symbol">me:</span> wildcard-cluster-tls-secret
+    <span class="hljs-built_in">t</span><span class="hljs-symbol">ls:</span>
+        <span class="hljs-built_in">na</span><span class="hljs-symbol">me:</span> openstack-tls-secret
+   ...
+</code></pre>
+<p>!!! note
+    The wildcard cluster tls secret is unchanged the majority of other services should use the
+    recent installed <em>openstack-tls-secret</em> secret (certificate)</p>
+<h3 id="remove-old-certificates-and-annotations-created-by-letsencrypt">Remove old certificates and annotations created by letsencrypt</h3>
+<pre><code class="lang-shell">kubectl <span class="hljs-keyword">delete</span> secret -n envoy-gateway barbican-gw-tls-secret cinder-gw-tls-secret cloudformation-gw-tls-secret glance-gw-tls-secret <span class="hljs-string">\</span>
+        gnocchi-gw-tls-secret grafana-gw-tls-secret heat-gw-tls-secret keystone-gw-tls-secret magnum-gw-tls-secret masakari-gw-tls-secret <span class="hljs-string">\</span>
+        metadata-gw-tls-secret neutron-gw-tls-secret nova-gw-tls-secret novnc-gw-tls-secret octavia-gw-tls-secret placement-gw-tls-secret skyline-gw-tls-secret <span class="hljs-string">\</span>
+        blazar-gw-tls-secret cloudkitty-gw-tls-secret freezer-gw-tls-secret ironic-gw-tls-secret manila-gw-tls-secret zaqar-gw-tls-secret
+
+kubectl annotate gateways.gateway.networking.k8s.io -n envoy-gateway flex-gateway cert-manager.io/cluster-issuer-
+</code></pre>
+<hr>
+<h1 id="infrastructure-install">Infrastructure Install</h1>
+<h2 id="infrastructure-services">Infrastructure Services</h2>
+<h3 id="keystone-endpoint-overrides-and-secrets">Keystone Endpoint overrides and Secrets</h3>
+<p>Copy and edit <code>/etc/genestack/helm-configs/global_overrides/endpoints.yaml</code></p>
+<pre><code class="lang-yaml"><span class="hljs-meta">---</span>
+<span class="hljs-attr">_region:</span> &amp;region RegionOne
+
+<span class="hljs-attr">clusterDomain:</span> cluster.local
+
+<span class="hljs-attr">pod:</span>
+<span class="hljs-attr">  resources:</span>
+<span class="hljs-attr">    enabled:</span> <span class="hljs-literal">false</span>
+
+<span class="hljs-attr">endpoints:</span>
+<span class="hljs-attr">  compute:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> nova.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  compute_metadata:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> metadata.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      metadata:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  compute_novnc_proxy:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> novnc.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      novnc_proxy:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  cloudformation:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> cloudformation.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  cloudwatch:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> cloudwatch.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  container_infra:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> magnum.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  key_manager:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> barbican.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  dashboard:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> horizon.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      web:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  metric:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> gnocchi.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  identity:</span>
+<span class="hljs-attr">    auth:</span>
+<span class="hljs-attr">      admin:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      barbican:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      cinder:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      ceilometer:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      glance:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      gnocchi:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      heat:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      heat_trustee:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      heat_stack_user:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      ironic:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      magnum:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      neutron:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      nova:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      placement:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">      octavia:</span>
+<span class="hljs-attr">        region_name:</span> <span class="hljs-meta">*region</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> keystone.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">        admin:</span> <span class="hljs-number">80</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  ingress:</span>
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      ingress:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">  image:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> glance.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  load_balancer:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> octavia.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  network:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> neutron.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  orchestration:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> heat.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  placement:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> placement.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  volume:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> cinder.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  volumev2:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> cinder.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+<span class="hljs-attr">  volumev3:</span>
+<span class="hljs-attr">    host_fqdn_override:</span>
+<span class="hljs-attr">      public:</span>
+<span class="hljs-attr">        tls:</span> {}
+<span class="hljs-attr">        host:</span> cinder.api.example.com
+<span class="hljs-attr">    port:</span>
+<span class="hljs-attr">      api:</span>
+<span class="hljs-attr">        public:</span> <span class="hljs-number">443</span>
+<span class="hljs-attr">    scheme:</span>
+<span class="hljs-attr">      public:</span> https
+</code></pre>
+<p>!!! tip
+    In a multi cluster installation please use a unique region per environment
+    in favor of using <em>RegionOne</em></p>
+<h3 id="memcache-libvirt">Memcache/libvirt</h3>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-memcached.sh
+<span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-libvirt.sh
+</code></pre>
+<h3 id="mariadb">MariaDB</h3>
+<h4 id="operator">Operator</h4>
+<pre><code class="lang-bash">CLUSTER_NAME=`kubectl config <span class="hljs-keyword">view</span> --minify -<span class="hljs-keyword">o</span> jsonpath=<span class="hljs-string">'{.clusters[0].name}'</span>`
+/<span class="hljs-keyword">opt</span>/genestack/bin/install-mariadb-operator.<span class="hljs-keyword">sh</span>
+</code></pre>
+<p>!!! Note
+    Wait for the operator to deploy and both pods to be ready</p>
+<pre><code>```bash
+kubectl wait deployment --for=condition=Available --all --namespace mariadb-<span class="hljs-keyword">system</span>
+```
+</code></pre><h4 id="database-cluster">Database Cluster</h4>
+<p>!!! Tip
+    By default <em>3</em> pods (servers) are installed</p>
+<pre><code class="lang-bash">kubectl --namespace openstack apply -k <span class="hljs-regexp">/etc/g</span>enestack<span class="hljs-regexp">/kustomize/m</span>ariadb-cluster<span class="hljs-regexp">/galera</span>
+</code></pre>
+<h3 id="rabbitmq-operator">RabbitMQ Operator</h3>
+<pre><code class="lang-bash">kubectl apply -k /etc/genestack/kustomize/rabbitmq-<span class="hljs-keyword">operator</span>/<span class="hljs-keyword">base</span>
+kubectl apply -k /etc/genestack/kustomize/rabbitmq-topology-<span class="hljs-keyword">operator</span>/<span class="hljs-keyword">base</span>
+</code></pre>
+<h4 id="rabbitmq-cluster">RabbitMQ Cluster</h4>
+<p>!!! Tip
+    By default <em>3</em> pods (servers) are installed</p>
+<pre><code class="lang-bash">kubectl apply -k <span class="hljs-regexp">/etc/g</span>enestack<span class="hljs-regexp">/kustomize/</span>rabbitmq-cluster<span class="hljs-regexp">/overlay</span>
+</code></pre>
+<p>Wait for RECONCILESUCCESS to be True</p>
+<pre><code class="lang-bash">kubectl --namespace openstack get rabbitmqclusters<span class="hljs-selector-class">.rabbitmq</span><span class="hljs-selector-class">.com</span> -w
+</code></pre>
+<h3 id="rabbitmq-monitoring">RabbitMQ monitoring</h3>
+<pre><code class="lang-bash">kubectl apply --filename <span class="hljs-symbol">https:</span>/<span class="hljs-regexp">/raw.githubusercontent.com/rabbitmq</span><span class="hljs-regexp">/cluster-operator/main</span><span class="hljs-regexp">/observability/prometheus</span><span class="hljs-regexp">/monitors/rabbitmq</span>-servicemonitor.yml
+kubectl apply --filename <span class="hljs-symbol">https:</span>/<span class="hljs-regexp">/raw.githubusercontent.com/rabbitmq</span><span class="hljs-regexp">/cluster-operator/main</span><span class="hljs-regexp">/observability/prometheus</span><span class="hljs-regexp">/monitors/rabbitmq</span>-cluster-operator-podmonitor.yml
+kubectl get prometheusrule -n prometheus -o name | xargs -I {} kubectl label -n prometheus {} release=kube-prometheus-stack --overwrite
+kubectl apply --filename <span class="hljs-symbol">https:</span>/<span class="hljs-regexp">/raw.githubusercontent.com/rabbitmq</span><span class="hljs-regexp">/cluster-operator/main</span><span class="hljs-regexp">/observability/prometheus</span><span class="hljs-regexp">/monitors/rabbitmq</span>-servicemonitor.yml
+kubectl apply --filename <span class="hljs-symbol">https:</span>/<span class="hljs-regexp">/raw.githubusercontent.com/rabbitmq</span><span class="hljs-regexp">/cluster-operator/main</span><span class="hljs-regexp">/observability/prometheus</span><span class="hljs-regexp">/monitors/rabbitmq</span>-cluster-operator-podmonitor.yml
+
+<span class="hljs-keyword">for</span> file <span class="hljs-keyword">in</span> <span class="hljs-variable">$(</span>curl -s <span class="hljs-symbol">https:</span>/<span class="hljs-regexp">/api.github.com/repos</span><span class="hljs-regexp">/rabbitmq/cluster</span>-operator/contents/observability/prometheus/rules/rabbitmq | jq -r <span class="hljs-string">'.[].download_url'</span>); <span class="hljs-keyword">do</span> kubectl apply -n prometheus -f <span class="hljs-variable">$file</span>; done
+
+<span class="hljs-keyword">for</span> file <span class="hljs-keyword">in</span> <span class="hljs-variable">$(</span>curl -s <span class="hljs-symbol">https:</span>/<span class="hljs-regexp">/api.github.com/repos</span><span class="hljs-regexp">/rabbitmq/cluster</span>-operator/contents/observability/prometheus/rules/rabbitmq-per-object | jq -r <span class="hljs-string">'.[].download_url'</span>); <span class="hljs-keyword">do</span> kubectl apply -n prometheus -f <span class="hljs-variable">$file</span>; done
+
+kubectl get prometheusrule -n prometheus -o name | xargs -I {} kubectl label -n prometheus {} release=kube-prometheus-stack --overwrite
+</code></pre>
+<hr>
+<h1 id="ovn-install-and-configure">OVN Install and Configure</h1>
+<h2 id="ovn-annotations">OVN Annotations</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align:left"><div style="width:220px">key</div></th>
+<th>type</th>
+<th style="text-align:center"><div style="width:128px">value</div></th>
+<th style="text-align:left">notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong>ovn.openstack.org/int_bridge</strong></td>
+<td>str</td>
+<td style="text-align:center"><code>br-int</code></td>
+<td style="text-align:left">The name of the integration bridge that will be used.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>ovn.openstack.org/bridges</strong></td>
+<td>str</td>
+<td style="text-align:center"><code>br-ex</code></td>
+<td style="text-align:left">Comma separated list of bridges that will be created and plugged into OVS for a given node.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>ovn.openstack.org/ports</strong></td>
+<td>str</td>
+<td style="text-align:center"><code>br-ex:bond1</code></td>
+<td style="text-align:left">Comma separated list of bridge mappings. Maps values from the <strong>bridges</strong> annotation to physical devices on a given node.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>ovn.openstack.org/mappings</strong></td>
+<td>str</td>
+<td style="text-align:center"><code>physnet1:br-ex</code></td>
+<td style="text-align:left">Comma separated list of neutron mappings. Maps a value that will be used in neutron to a value found in the <strong>ports</strong> annotation. Every provider network name listed in this annotation will have a unique mac address generated per-host.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>ovn.openstack.org/availability_zones</strong></td>
+<td>str</td>
+<td style="text-align:center"><code>az1</code></td>
+<td style="text-align:left">Colon separated list of Availability Zones a given node will serve.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>ovn.openstack.org/gateway</strong></td>
+<td>str</td>
+<td style="text-align:center"><code>enabled</code></td>
+<td style="text-align:left">If set to <code>enabled</code>, the node will be marked as a gateway.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="ovn-configuration">OVN Configuration</h2>
+<h3 id="add-bridges">Add bridges</h3>
+<pre><code class="lang-bash">kubectl annotate nodes -l openstack-compute-node=enabled -l openstack-network-node=enabled ovn<span class="hljs-selector-class">.openstack</span><span class="hljs-selector-class">.org</span>/int_bridge=<span class="hljs-string">'br-int'</span>
+kubectl annotate nodes -l openstack-compute-node=enabled -l openstack-network-node=enabled ovn<span class="hljs-selector-class">.openstack</span><span class="hljs-selector-class">.org</span>/bridges=<span class="hljs-string">'br-ex,br-pxe'</span>
+</code></pre>
+<h3 id="assign-ports-to-bridges">Assign ports to bridges</h3>
+<p>!!! Warning
+    The ironic network is mapped to the <em>physnet2</em> provider name and typically gets mapped to
+    <em>br-pxe</em> as flat network with a pre provisioned vlan.</p>
+<pre><code class="lang-bash">kubectl annotate nodes -l openstack-compute-node=enabled -l openstack-network-node=enabled \
+  ovn<span class="hljs-selector-class">.openstack</span><span class="hljs-selector-class">.org</span>/ports=<span class="hljs-string">'br-ex:bond1'</span>
+</code></pre>
+<h3 id="neutron-network-mappings-and-az">Neutron network mappings and AZ</h3>
+<pre><code class="lang-bash">kubectl annotate nodes -l openstack-compute-node=enabled -l openstack-network-node=enabled \
+  ovn<span class="hljs-selector-class">.openstack</span><span class="hljs-selector-class">.org</span>/mappings=<span class="hljs-string">'physnet1:br-ex'</span>
+</code></pre>
+<p>The <em>az1</em> availability zone is setup instead of the typical AZ <em>nova</em></p>
+<pre><code class="lang-bash">kubectl annotate nodes -l openstack-compute-node=enabled -l openstack-network-node=enabled \
+  ovn<span class="hljs-selector-class">.openstack</span><span class="hljs-selector-class">.org</span>/availability_zones=<span class="hljs-string">'az1'</span>
+</code></pre>
+<h3 id="install-ovn-integration">Install OVN integration</h3>
+<pre><code class="lang-bash">kubectl annotate nodes -l openstack-network-node=enabled ovn<span class="hljs-selector-class">.openstack</span><span class="hljs-selector-class">.org</span>/gateway=<span class="hljs-string">'enabled'</span>
+
+kubectl apply -k /etc/genestack/kustomize/ovn/base
+</code></pre>
+<p>After running the setup, nodes will have the label <code>ovn.openstack.org/configured</code> with a date stamp when it was configured.
+If there&#39;s ever a need to reconfigure a node, simply remove the label and the DaemonSet will take care of it automatically.</p>
+<hr>
+<h1 id="ceph-rbd-external-cluster-optional-">Ceph RBD External Cluster (Optional)</h1>
+<h2 id="configure-openstack-services-config-for-use-with-external-ceph-cluster">Configure Openstack services config for use with EXTERNAL Ceph cluster</h2>
+<p><strong>NOTE</strong> Please use the br-storage IP as the ceph monitors IPS</p>
+<h3 id="collect-client-key-data-from-ceph">Collect client key data from Ceph</h3>
+<pre><code class="lang-bash">declare -a MONITORS=( &lt;MON_IP1&gt; &lt;MON_IP2&gt; &lt;MON_IP3&gt; )
+
+ssh <span class="hljs-variable">${MONITORS[0]}</span>
+cephadm shell
+<span class="hljs-keyword">for</span> POOL <span class="hljs-keyword">in</span> images vms volumes; <span class="hljs-keyword">do</span> ceph osd pool create <span class="hljs-variable">$POOL</span>; rbd pool init <span class="hljs-variable">$POOL</span>; done
+<span class="hljs-keyword">exit</span>; <span class="hljs-keyword">exit</span> <span class="hljs-comment">#(back to deployment node)</span>
+
+export UUIDGEN=$(uuidgen)
+export FSID=`ssh <span class="hljs-variable">${MONITORS[0]}</span> cephadm shell <span class="hljs-string">"ceph fsid"</span> <span class="hljs-number">2</span>&gt;<span class="hljs-regexp">/dev/</span>null`
+export GLANCE_KEYRING=`ssh <span class="hljs-variable">${MONITORS[0]}</span> cephadm shell <span class="hljs-string">"ceph auth get-or-create-key client.glance mon 'profile rbd' osd 'allow class-read object_prefix rbd_children, profile rbd pool=images' mgr 'profile rbd pool=images'"</span> <span class="hljs-number">2</span>&gt;<span class="hljs-regexp">/dev/</span>null`
+export CINDER_KEYRING=`ssh <span class="hljs-variable">${MONITORS[0]}</span> cephadm shell <span class="hljs-string">"ceph auth get-or-create-key client.cinder mon 'profile rbd' osd 'allow class-read object_prefix rbd_children, profile rbd pool=volumes, profile rbd pool=vms, profile rbd-read-only pool=images' mgr 'profile rbd pool=volumes, profile rbd pool=vms'"</span>`
+export GLANCE_KEYRING_BASE64=$(echo -n <span class="hljs-string">"$GLANCE_KEYRING"</span> | base64)
+export CINDER_KEYRING_BASE64=$(echo -n <span class="hljs-string">"$CINDER_KEYRING"</span> | base64)
+</code></pre>
+<h3 id="create-the-glance-overrides-file">Create the Glance overrides file</h3>
+<pre><code class="lang-bash">GLANCE_FILE=<span class="hljs-string">"/etc/genestack/helm-configs/glance/glance-helm-overrides.yaml"</span>
+cat &lt;&lt;EOT &gt;&gt; <span class="hljs-string">"$GLANCE_FILE"</span>
+<span class="hljs-meta">---</span>
+<span class="hljs-attr">storage:</span> rbd
+
+<span class="hljs-attr">images:</span>
+<span class="hljs-attr">  tags:</span>
+<span class="hljs-attr">    glance_storage_init:</span> quay.io/airshipit/ceph-config-helper:latest-ubuntu_jammy
+<span class="hljs-attr">    glance_api:</span> quay.io/airshipit/glance:<span class="hljs-number">2024.1</span>-ubuntu_jammy
+
+<span class="hljs-attr">conf:</span>
+<span class="hljs-attr">  glance:</span>
+<span class="hljs-attr">    DEFAULT:</span>
+<span class="hljs-attr">      workers:</span> <span class="hljs-number">2</span>
+<span class="hljs-attr">      enabled_backends:</span> <span class="hljs-string">"rbd:rbd"</span>
+<span class="hljs-attr">      show_image_direct_url:</span> <span class="hljs-literal">True</span>
+<span class="hljs-attr">    glance_store:</span>
+<span class="hljs-attr">      default_backend:</span> rbd
+<span class="hljs-attr">    rbd:</span>
+<span class="hljs-attr">      rbd_store_chunk_size:</span> <span class="hljs-number">8</span>
+<span class="hljs-attr">      rbd_store_pool:</span> images
+<span class="hljs-attr">      rbd_store_user:</span> glance
+<span class="hljs-attr">      rbd_store_crush_rule:</span> images
+<span class="hljs-attr">      rbd_store_ceph_conf:</span> /etc/ceph/ceph.conf
+EOT
+</code></pre>
+<h3 id="create-the-nova-overrides-file">Create the Nova overrides file</h3>
+<pre><code class="lang-bash">NOVA_FILE=<span class="hljs-string">"/etc/genestack/helm-configs/nova/nova-helm-overrides.yaml"</span>
+cat &lt;&lt;EOT &gt;&gt; <span class="hljs-string">"$NOVA_FILE"</span>
+<span class="hljs-meta">---</span>
+<span class="hljs-attr">images:</span>
+<span class="hljs-attr">  tags:</span>
+<span class="hljs-attr">    nova_compute:</span> <span class="hljs-string">"quay.io/airshipit/nova:2024.1-ubuntu_jammy"</span>
+
+<span class="hljs-attr">conf:</span>
+<span class="hljs-attr">  ceph:</span>
+<span class="hljs-attr">    enabled:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">    cinder:</span>
+<span class="hljs-attr">      secret_uuid:</span> $UUIDGEN
+<span class="hljs-attr">      keyring:</span> $CINDER_KEYRING
+<span class="hljs-attr">  nova:</span>
+<span class="hljs-attr">    libvirt:</span>
+<span class="hljs-attr">      images_type:</span> rbd
+<span class="hljs-attr">      images_rbd_pool:</span> vms
+<span class="hljs-attr">      images_rbd_ceph_conf:</span> /etc/ceph/ceph.conf
+<span class="hljs-attr">      rbd_secret_uuid:</span> $UUIDGEN
+<span class="hljs-attr">      force_raw_images:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">      volume_use_multipath:</span> <span class="hljs-literal">false</span>
+EOT
+</code></pre>
+<h3 id="create-the-libvirt-override-file">Create the Libvirt override file</h3>
+<pre><code class="lang-bash">LIBVIRT_FILE=/etc/genestack/helm-configs/libvirt/libvirt-helm-overrides.yaml
+cat &lt;&lt;EOT &gt;&gt; <span class="hljs-string">"$LIBVIRT_FILE"</span>
+<span class="hljs-meta">---</span>
+<span class="hljs-attr">images:</span>
+<span class="hljs-attr">  tags:</span>
+<span class="hljs-attr">    libvirt:</span> <span class="hljs-string">"docker.io/openstackhelm/libvirt:2024.1-ubuntu_jammy"</span>
+
+<span class="hljs-attr">conf:</span>
+<span class="hljs-attr">  ceph:</span>
+<span class="hljs-attr">    enabled:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">    cinder:</span>
+<span class="hljs-attr">      keyring:</span> $CINDER_KEYRING
+<span class="hljs-attr">      secret_uuid:</span> $UUIDGEN
+<span class="hljs-attr">      external_ceph:</span>
+<span class="hljs-attr">        enabled:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">        user:</span> cinder
+<span class="hljs-attr">        secret_uuid:</span> $UUIDGEN
+<span class="hljs-attr">        user_secret_name:</span> pvc-ceph-client-key
+EOT
+</code></pre>
+<h3 id="create-the-cinder-overrides-file">Create the Cinder overrides file</h3>
+<pre><code class="lang-bash">CINDER_FILE=<span class="hljs-string">"/etc/genestack/helm-configs/cinder/cinder-helm-overrides.yaml"</span>
+cat &lt;&lt;EOT &gt;&gt; <span class="hljs-string">"$CINDER_FILE"</span>
+<span class="hljs-meta">---</span>
+<span class="hljs-attr">storage:</span> ceph
+
+<span class="hljs-attr">images:</span>
+<span class="hljs-attr">  tags:</span>
+<span class="hljs-attr">    cinder_volume:</span> <span class="hljs-string">"quay.io/airshipit/cinder:2024.1-ubuntu_jammy"</span>
+
+<span class="hljs-attr">ceph_client:</span>
+<span class="hljs-attr">  enable_external_ceph_backend:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">  external_ceph:</span>
+<span class="hljs-attr">    rbd_user:</span> cinder
+<span class="hljs-attr">    rbd_user_keyring:</span> $CINDER_KEYRING
+
+<span class="hljs-attr">conf:</span>
+<span class="hljs-attr">  ceph:</span>
+<span class="hljs-attr">    enabled:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">  cinder:</span>
+<span class="hljs-attr">    DEFAULT:</span>
+<span class="hljs-attr">      enabled_backends:</span> rbd-ceph
+<span class="hljs-attr">      default_volume_type:</span> rbd-ceph
+<span class="hljs-attr">      backup_driver:</span> <span class="hljs-string">"cinder.backup.drivers.ceph.CephBackupDriver"</span>
+<span class="hljs-attr">  backends:</span>
+<span class="hljs-attr">    rbd-ceph:</span>
+<span class="hljs-attr">      volume_driver:</span> cinder.volume.drivers.rbd.RBDDriver
+<span class="hljs-attr">      volume_backend_name:</span> rbd-ceph
+<span class="hljs-attr">      rbd_pool:</span> volumes
+<span class="hljs-attr">      rbd_ceph_conf:</span> /etc/ceph/ceph.conf
+<span class="hljs-attr">      rbd_secret_uuid:</span> $UUIDGEN
+<span class="hljs-attr">      rbd_flatten_volume_from_snapshot:</span> <span class="hljs-literal">false</span>
+<span class="hljs-attr">      report_discard_supported:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">      rbd_max_clone_depth:</span> <span class="hljs-number">5</span>
+<span class="hljs-attr">      rbd_store_chunk_size:</span> <span class="hljs-number">4</span>
+<span class="hljs-attr">      rados_connect_timeout:</span> <span class="hljs-bullet">-1</span>
+<span class="hljs-attr">      rbd_user:</span> cinder
+<span class="hljs-attr">      image_volume_cache_enabled:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">      image_volume_cache_max_size_gb:</span> <span class="hljs-number">200</span>
+<span class="hljs-attr">      image_volume_cache_max_count:</span> <span class="hljs-number">50</span>
+<span class="hljs-attr">secrets:</span>
+<span class="hljs-attr">  rbd:</span>
+<span class="hljs-attr">    backup:</span> pvc-ceph-client-key
+<span class="hljs-attr">    volume:</span> pvc-ceph-client-key
+<span class="hljs-attr">    volume_external:</span> pvc-ceph-client-key
+<span class="hljs-attr">manifests:</span>
+<span class="hljs-attr">  deployment_volume:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">  deployment_backup:</span> <span class="hljs-literal">true</span>
+<span class="hljs-attr">  job_backup_storage_init:</span> <span class="hljs-literal">false</span>
+EOT
+</code></pre>
+<h3 id="create-ceph-conf-configmaps">Create Ceph conf ConfigMaps</h3>
+<pre><code class="lang-bash">cat &lt;&lt;EOT &gt; /etc/genestack/manifests/ceph/ceph-etc.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ceph-etc
+  namespace: openstack
+data:
+  ceph.conf: |
+    [global]
+    <span class="hljs-attr">cephx</span> = <span class="hljs-literal">true</span>
+    <span class="hljs-attr">cephx_cluster_require_signatures</span> = <span class="hljs-literal">true</span>
+    <span class="hljs-attr">cephx_require_signatures</span> = <span class="hljs-literal">false</span>
+    <span class="hljs-attr">cephx_service_require_signatures</span> = <span class="hljs-literal">false</span>
+    <span class="hljs-attr">debug_ms</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_asok</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_auth</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_bluestore</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_buffer</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_client</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_context</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_crush</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_filer</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_filestore</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_finisher</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_heartbeatmap</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_journal</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_journaler</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_lockdep</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_mon</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_monc</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_ms</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_objclass</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_objectcacher</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_objecter</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_optracker</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_osd</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_paxos</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_perfcounter</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_rados</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_rbd</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_rgw</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_throttle</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_timer</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">debug_tp</span> = <span class="hljs-number">0</span>/<span class="hljs-number">0</span>
+    <span class="hljs-attr">log_file</span> = /dev/stdout
+    <span class="hljs-attr">mon_cluster_log_file</span> = /dev/stdout
+    <span class="hljs-attr">fsid</span> = $FSID
+    <span class="hljs-attr">mon_host</span> = [v2:${MONITORS[<span class="hljs-number">0</span>]}:<span class="hljs-number">3300</span>/<span class="hljs-number">0</span>,v1:${MONITORS[<span class="hljs-number">0</span>]}:<span class="hljs-number">6789</span>/<span class="hljs-number">0</span>] [v2:${MONITORS[<span class="hljs-number">1</span>]}:<span class="hljs-number">3300</span>/<span class="hljs-number">0</span>,v1:${MONITORS[<span class="hljs-number">1</span>]}:<span class="hljs-number">6789</span>/<span class="hljs-number">0</span>] [v2:${MONITORS[<span class="hljs-number">2</span>]}:<span class="hljs-number">3300</span>/<span class="hljs-number">0</span>,v1:${MONITORS[<span class="hljs-number">2</span>]}:<span class="hljs-number">6789</span>/<span class="hljs-number">0</span>]
+    <span class="hljs-attr">max_open_files</span> = <span class="hljs-number">26234859</span>
+    <span class="hljs-attr">objecter_inflight_op_bytes</span> = <span class="hljs-number">524288000</span>
+    <span class="hljs-attr">objecter_inflight_ops</span> = <span class="hljs-number">5120</span>
+EOT
+
+kubectl apply -f /etc/genestack/manifests/ceph/ceph-etc.yaml
+
+
+
+<span class="hljs-comment">### Create the Ceph client keyring secrets</span>
+```bash
+cat &lt;&lt;EOT &gt; /etc/genestack/manifests/ceph/pvc-ceph-keyring.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pvc-ceph-client-key
+  namespace: openstack
+  labels:
+    application: ceph
+    component: rbd
+data:
+  key: $CINDER_KEYRING_BASE64
+type: kubernetes.io/rbd
+EOT
+kubectl apply -f /etc/genestack/manifests/ceph/pvc-ceph-keyring.yaml
+
+
+
+cat &lt;&lt;EOT &gt; /etc/genestack/manifests/ceph/glance-keyring.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: images-rbd-keyring
+  namespace: openstack
+  labels:
+    application: ceph
+    component: rbd
+data:
+  key: $GLANCE_KEYRING_BASE64
+type: kubernetes.io/rbd
+EOT
+kubectl apply -f /etc/genestack/manifests/ceph/glance-keyring.yaml
+</code></pre>
+<hr>
+<h1 id="openstack-services">OpenStack Services</h1>
+<h3 id="keystone">Keystone</h3>
+<p>!!! Note
+    Keystone must be installed before any other service and accessible,
+    up and running before installing the remining OpenStack services.</p>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-keystone.sh
+kubectl --namespace openstack apply -f <span class="hljs-regexp">/etc/g</span>enestack<span class="hljs-regexp">/manifests/u</span>tils<span class="hljs-regexp">/utils-openstack-client-admin.yaml</span>
+</code></pre>
+<p>List endpoint catalog and verify URLs</p>
+<pre><code class="lang-bash">kubectl --<span class="hljs-keyword">namespace</span> openstack <span class="hljs-keyword">exec</span> -ti openstack-admin-client -- openstack endpoint <span class="hljs-keyword">list</span>
+</code></pre>
+<p>Once keystone is installed, a local OpenStack CLI configuration can be installed with the following command
+and is persisted inside <code>~/.config/openstack/clouds.yaml</code></p>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/</span>setup-openstack-rc.sh
+</code></pre>
+<h3 id="glance">Glance</h3>
+<p>!!! Warning
+    Please configure the storage subsystem (NetApp, Ceph etc.) before installing glance, otherwise
+    glance and its bootstrap container will use the <em>generic</em> storage class</p>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-glance.sh
+</code></pre>
+<h3 id="cinder">Cinder</h3>
+<p>Install the cinder API, the backend will be configured after the API got installed initially</p>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-cinder.sh
+</code></pre>
+<h3 id="compute">Compute</h3>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-placement.sh
+<span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-nova.sh
+</code></pre>
+<h3 id="neutron">Neutron</h3>
+<p>If not present update the MTU settings for neutron to support standard MTUs inside tenant networks</p>
+<pre><code class="lang-bash">cat <span class="hljs-params">&lt;&lt; EOT &gt;</span> <span class="hljs-meta-keyword">/etc/</span>genestack<span class="hljs-meta-keyword">/helm-configs/</span>neutron/neutron-helm-overrides.yaml
+<span class="hljs-symbol">conf:</span>
+<span class="hljs-symbol">  neutron:</span>
+<span class="hljs-symbol">    DEFAULT:</span>
+<span class="hljs-symbol">      global_physnet_mtu:</span> <span class="hljs-number">9000</span>
+<span class="hljs-symbol">  plugins:</span>
+<span class="hljs-symbol">    ml2_conf:</span>
+<span class="hljs-symbol">      ml2:</span>
+<span class="hljs-symbol">        path_mtu:</span> <span class="hljs-number">1558</span>
+<span class="hljs-symbol">        physical_network_mtus:</span> physnet1:<span class="hljs-number">1500</span>
+EOT
+</code></pre>
+<p>Install neutron</p>
+<p>!!! Warning
+    OVN and neutron provider settings (bridges, mapping) should be already configured at this point.
+    Please ensure that the OVN annotations are in place during the initial K8s installation</p>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-neutron.sh
+</code></pre>
+<h3 id="barbican">Barbican</h3>
+<pre><code>sed -i <span class="hljs-string">'s|barbican\.example\.com|barbican-userX.ftigenestack.site|g'</span> <span class="hljs-regexp">/etc/</span>genestack<span class="hljs-regexp">/helm-configs/</span>barbican/barbican-helm-overrides.yaml
+
+<span class="hljs-regexp">/opt/</span>genestack<span class="hljs-regexp">/bin/</span>install-barbican.sh
+</code></pre><h3 id="skyline">Skyline</h3>
+<pre><code><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-skyline.sh
+</code></pre><h3 id="heat">Heat</h3>
+<pre><code><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-heat.sh
+</code></pre><h3 id="octavia">Octavia</h3>
+<h4 id="review-the-role-values">Review the role values</h4>
+<p>The default values are in <code>/opt/genestack/ansible/playbooks/roles/octavia_preconf/defaults/main.yml</code>.
+OpenStack Enterprise will come with a updated default configuration at
+<code>/etc/genestack/inventory/group_vars/all/octavia-preconfig.yml</code></p>
+<p>Review the settings and adjust as necessary. Depending on the size of your cluster, you may want to adjust the
+<strong><em>lb_mgmt_subnet</em></strong> settings or block icmp and ssh access to the amphora vms.</p>
+<h4 id="prepare-octavia-installation">Prepare Octavia installation</h4>
+<pre><code class="lang-bash">source /opt/genestack/scripts/genestack.rc
+
+ansible-playbook /opt/genestack/ansible/playbooks/octavia-preconf-main.yaml \
+                -e octavia_os_password=$(kubectl <span class="hljs-keyword">get</span> secrets keystone-admin -n openstack -o jsonpath=<span class="hljs-string">'{.data.password}'</span> | base64 -d) \
+                -e octavia_os_region_name=$(openstack --os-cloud=<span class="hljs-keyword">default</span> endpoint list --service keystone --<span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-keyword">public</span> -<span class="hljs-title">c</span> <span class="hljs-title">Region</span> -<span class="hljs-title">f</span> <span class="hljs-title">value</span>) \</span>
+                -e octavia_os_auth_url=$(openstack --os-cloud=<span class="hljs-keyword">default</span> endpoint list --service keystone --<span class="hljs-class"><span class="hljs-keyword">interface</span> <span class="hljs-keyword">public</span> -<span class="hljs-title">c</span> <span class="hljs-title">URL</span> -<span class="hljs-title">f</span> <span class="hljs-title">value</span>)</span>
+</code></pre>
+<h4 id="install-octavia-service">Install Octavia service</h4>
+<pre><code class="lang-bash"><span class="hljs-comment"># Move generated Octavia helm configuration into configuration directory</span>
+mv ~<span class="hljs-regexp">/octavia_amphora_provider.yaml /</span>etc<span class="hljs-regexp">/genestack/</span>helm-configs<span class="hljs-regexp">/octavia/</span>
+
+<span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-octavia.sh
+</code></pre>
+<hr>
+<h1 id="post-install-monitoring">Post Install Monitoring</h1>
+<h3 id="kube-ovn-monitoring">Kube-OVN Monitoring</h3>
+<p>Kube-OVN exposes important metrics about the Controller, Pinger, and CNI pods. Will create servicemonitor in prometheus to pull metrics</p>
+<pre><code class="lang-bash">kubectl apply -k <span class="hljs-regexp">/etc/g</span>enestack<span class="hljs-regexp">/kustomize/</span>prometheus-ovn<span class="hljs-regexp">/base</span>
+</code></pre>
+<h3 id="grafana">Grafana</h3>
+<pre><code class="lang-bash">cat <span class="hljs-params">&lt;&lt; EOT &gt;</span> <span class="hljs-meta-keyword">/etc/</span>genestack<span class="hljs-meta-keyword">/helm-configs/</span>grafana/grafana-helm-overrides.yaml
+<span class="hljs-symbol">  custom_host:</span> grafana.api.<span class="hljs-params">&lt;openstack domain&gt;</span>
+EOT
+
+<span class="hljs-meta-keyword">/opt/</span>genestack<span class="hljs-meta-keyword">/bin/</span>install-grafana.sh
+
+kubectl get pods --namespace grafana -l <span class="hljs-string">"app.kubernetes.io/name=grafana,app.kubernetes.io/instance=grafana"</span> -o jsonpath=<span class="hljs-string">"{.items[0].metadata.name}"</span>
+</code></pre>
+<h4 id="dashboards">Dashboards</h4>
+<p>Some default grafana dasboards are included within the <code>/opt/genestack/etc/grafana-dashboards/</code> directory and are
+built to use the Prometheus data source that is exported via the cluster internal service
+<em><a href="http://kube-prometheus-stack-prometheus.prometheus.svc.cluster.local:9090">http://kube-prometheus-stack-prometheus.prometheus.svc.cluster.local:9090</a></em> configured by the grafana helm chart.</p>
+<p>To override the datasource section defaulting to:</p>
+<pre><code class="lang-yaml"><span class="hljs-attribute">datasources</span>:
+  datasources.<span class="hljs-attribute">yaml</span>:
+    <span class="hljs-attribute">apiversion</span>: <span class="hljs-number">1</span>
+    <span class="hljs-attribute">datasources</span>:
+      - <span class="hljs-attribute">name</span>: Prometheus
+        <span class="hljs-attribute">type</span>: prometheus
+        <span class="hljs-attribute">access</span>: proxy
+        <span class="hljs-attribute">url</span>: <span class="hljs-attribute">http</span>:<span class="hljs-comment">//kube-prometheus-stack-prometheus.prometheus.svc.cluster.local:9090</span>
+        <span class="hljs-attribute">isdefault</span>: true
+      - <span class="hljs-attribute">name</span>: Loki
+        <span class="hljs-attribute">type</span>: loki
+        <span class="hljs-attribute">access</span>: proxy
+        <span class="hljs-attribute">url</span>: <span class="hljs-attribute">http</span>:<span class="hljs-comment">//loki-gateway.{{ $.Release.Namespace }}.svc.cluster.local:80</span>
+        <span class="hljs-attribute">editable</span>: false
+</code></pre>
+<pre><code class="lang-bash">export GRAFANA_USERNAME=admin
+export GRAFANA_URL=`awk -F<span class="hljs-string">': '</span> <span class="hljs-string">'/custom_host/{print "https://" $2}'</span> <span class="hljs-regexp">/etc/</span>genestack<span class="hljs-regexp">/helm-configs/</span>grafana/grafana-helm-overrides.yaml`
+export GRAFANA_PASSWORD=`kubectl -n grafana get secret grafana -o jsonpath=<span class="hljs-string">'{.data.admin-password}'</span> |base64 -d`
+
+source <span class="hljs-regexp">/opt/</span>genestack<span class="hljs-regexp">/scripts/</span>genestack.rc
+python3 <span class="hljs-regexp">/opt/</span>genestack<span class="hljs-regexp">/scripts/</span><span class="hljs-keyword">import</span>-grafana-dashboard.py --dir <span class="hljs-regexp">/opt/</span>genestack<span class="hljs-regexp">/etc/</span>grafana-dashboards/ --datasource Prometheus
+</code></pre>
+<h3 id="prometheus-exporter-installation">Prometheus exporter installation</h3>
+<h4 id="preparation">Preparation</h4>
+<pre><code class="lang-bash">kubectl <span class="hljs-comment">--namespace openstack \</span>
+  <span class="hljs-keyword">create</span> secret generic mariadb-<span class="hljs-keyword">monitoring</span> \
+  <span class="hljs-comment">--type Opaque \</span>
+  <span class="hljs-comment">--from-literal=username="monitoring" \</span>
+  <span class="hljs-comment">--from-literal=password="$(&lt; /dev/urandom tr -dc _A-Za-z0-9 | head -c${1:-64};echo;)"</span>
+
+kubectl -n openstack <span class="hljs-keyword">create</span> secret generic mariadb-monitor <span class="hljs-comment">--type Opaque --from-literal=my.cnf="[client.mariadb-monitor]</span>
+<span class="hljs-keyword">user</span>=<span class="hljs-keyword">monitoring</span>
+<span class="hljs-keyword">password</span>=$(kubectl <span class="hljs-comment">--namespace openstack get secret mariadb-monitoring -o jsonpath='{.data.password}' | base64 -d)"</span>
+</code></pre>
+<p>This will populate default credentials in order to allow the monitoring tools to login into the mariadb</p>
+<pre><code class="lang-ini"><span class="hljs-section">[client.mariadb-monitor]</span>
+<span class="hljs-attr">user</span>=monitoring
+<span class="hljs-attr">password</span>=&lt;password&gt;
+</code></pre>
+<p>!!! note
+    Older genestack versions are referencing the <code>my.conf</code> config file within the <code>mariadb-monitor</code> secret
+    while the current configuration is using <code>my.cnf</code>, this can lead to prometheus-mysql-exporter pods crashing.
+    In such cases update the <code>/opt/genestack/base-helm-configs/prometheus-mysql-exporter/values.yaml</code> file to
+    change the <code>key: &quot;my.conf&quot;</code> setting to <code>key: &quot;my.cnf&quot;</code></p>
+<p>Define API endpoints to monitor for the blackbox-exporter</p>
+<pre><code class="lang-bash"><span class="hljs-keyword">cat</span> &lt;&lt; EOT &gt; /etc/genestack/helm-configs/prometheus-blackbox-exporter/probe_targets.yaml
+serviceMonitor:
+  target<span class="hljs-variable">s:</span>
+
+    # Baseline external probe...
+    - name: google-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//google.<span class="hljs-keyword">com</span>
+
+    # Openstack services
+    - name: nova-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//nova.api.example.<span class="hljs-keyword">com</span>
+    - name: neutron-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//neutron.api.example.<span class="hljs-keyword">com</span>
+    - name: keystone-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//keystone.api.example.<span class="hljs-keyword">com</span>
+    - name: octavia-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//octavia.api.example.<span class="hljs-keyword">com</span>
+    - name: glance-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//glance.api.example.<span class="hljs-keyword">com</span>
+    - name: heat-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//heat.api.example.<span class="hljs-keyword">com</span>
+    - name: cinder-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//cinder.api.example.<span class="hljs-keyword">com</span>
+    - name: cloudformation-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//cloudformation.api.example.<span class="hljs-keyword">com</span>
+    - name: placement-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//placement.api.example.<span class="hljs-keyword">com</span>
+    - name: barbican-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//barbican.api.example.<span class="hljs-keyword">com</span>
+    - name: magnum-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//magnum.api.example.<span class="hljs-keyword">com</span>
+    - name: masakari-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//masakari.api.example.<span class="hljs-keyword">com</span>
+    - name: novavnc-probe
+      ur<span class="hljs-variable">l:</span> http<span class="hljs-variable">s:</span>//novnc.api.example.<span class="hljs-keyword">com</span>/vnc_auto.html
+EOT
+</code></pre>
+<h4 id="charts">Charts</h4>
+<p>!!! note
+    Ensure that the mysql exporter is patched with git commit
+    <code>Updating mysql-exporter for correct secret config and updating docs (#1079)</code></p>
+<pre><code class="lang-bash"><span class="hljs-keyword">cd</span> /<span class="hljs-keyword">opt</span>/genestack
+<span class="hljs-keyword">source</span> /<span class="hljs-keyword">opt</span>/genestack/scripts/genestack.rc
+
+bin/install-prometheus-mysql-exporter.<span class="hljs-keyword">sh</span>
+bin/install-prometheus-rabbitmq-exporter.<span class="hljs-keyword">sh</span>
+bin/install-prometheus-blackbox-exporter.<span class="hljs-keyword">sh</span>
+</code></pre>
+<p>Optional exporters</p>
+<pre><code class="lang-bash">bin/<span class="hljs-keyword">install</span>-prometheus-postgres-exporter.sh
+<span class="hljs-keyword">bin</span>/<span class="hljs-keyword">install</span>-prometheus-snmp-exporter.sh
+<span class="hljs-keyword">bin</span>/<span class="hljs-keyword">install</span>-barbican-exporter.sh
+<span class="hljs-keyword">bin</span>/<span class="hljs-keyword">install</span>-prometheus-pushgateway.sh
+</code></pre>
+<h3 id="openstack-exporter">OpenStack Exporter</h3>
+<p>!!! warning
+    The <strong><em>yq</em></strong> binary gets installed during installation and a minimal version of <strong><em>v4.27</em></strong>,
+    ideally the current version  <strong><em>v4.47.2</em></strong> should be installed othersise the generated <code>clouds.yaml</code>
+    will not be match a expected format and the os-exporter pod will crash</p>
+<p>The following instructions assume that the endpoints use proper SSL certs, if internal certs are used,
+please refer to <a href="https://docs.rackspacecloud.com/prometheus-openstack-metrics-exporter">prometheus-openstack-metrics-exporter genestack docs</a></p>
+<pre><code class="lang-bash">mkdir <span class="hljs-regexp">/etc/</span>genestack<span class="hljs-regexp">/helm-configs/</span>monitoring/openstack-metrics-exporter
+cp <span class="hljs-regexp">/opt/</span>genestack<span class="hljs-regexp">/base-helm-configs/</span>monitoring<span class="hljs-regexp">/openstack-metrics-exporter/</span>openstack-metrics-exporter-helm-overrides.yaml \
+   <span class="hljs-regexp">/etc/</span>genestack<span class="hljs-regexp">/helm-configs/</span>monitoring<span class="hljs-regexp">/openstack-metrics-exporter/</span>openstack-metrics-exporter-helm-overrides.yaml
+
+
+apt -y remove yq
+<span class="hljs-regexp">/opt/</span>genestack<span class="hljs-regexp">/bin/</span>setup-openstack-rc.sh
+
+printf -v m <span class="hljs-string">"$(cat ~/.config/openstack/clouds.yaml)"</span>; \
+    t=$(echo <span class="hljs-string">"$m"</span> | yq <span class="hljs-string">'.[] |= pick(["clouds", "default"])'</span> | yq <span class="hljs-string">'del(.cache)'</span>); \
+         t=<span class="hljs-string">"$t"</span> yq -I6 -n <span class="hljs-string">'."clouds.yaml" = strenv(t)'</span> | \
+             tee <span class="hljs-regexp">/tmp/</span>generated-clouds-yaml
+
+kubectl --namespace openstack create secret generic clouds-yaml-secret \
+  --from-file <span class="hljs-regexp">/tmp/</span>generated-clouds-yaml
+
+cd <span class="hljs-regexp">/opt/</span>genestack<span class="hljs-regexp">/submodules/</span>openstack-exporter/charts
+
+helm upgrade --install os-metrics ./prometheus-openstack-exporter \
+  --namespace=openstack \
+  --timeout <span class="hljs-number">15</span>m \
+  -f <span class="hljs-regexp">/etc/</span>genestack<span class="hljs-regexp">/helm-configs/</span>monitoring<span class="hljs-regexp">/openstack-metrics-exporter/</span>openstack-metrics-exporter-helm-overrides.yaml \
+  --set clouds_yaml_config=<span class="hljs-string">"$(kubectl --namespace openstack get secret clouds-yaml-secret -o jsonpath='{.data.generated-clouds-yaml}' | base64 -d)"</span>
+</code></pre>
+<p>!!! note
+    If you ever have to rebuild the secrets from the <code>clouds.yml</code> information, you can easily delete the secrets and rebuild them
+    with the commands above</p>
+<pre><code>```bash
+kubectl -n openstack delete secret clouds-yaml-secret
+kubectl -n openstack delete secret openstack-config
+```
+</code></pre><hr>
+<h1 id="post-install">Post-Install</h1>
+<h2 id="post-installation-configuration">Post Installation Configuration</h2>
+<h3 id="quotas">Quotas</h3>
+<pre><code class="lang-bash"><span class="hljs-string">kubectl </span><span class="hljs-built_in">--namespace</span> <span class="hljs-string">openstack </span><span class="hljs-string">exec </span>-<span class="hljs-string">ti </span><span class="hljs-string">openstack-admin-</span><span class="hljs-string">client </span>-- <span class="hljs-string">bash
+</span>
+<span class="hljs-string">openstack </span><span class="hljs-string">quota </span><span class="hljs-string">set </span><span class="hljs-built_in">--cores</span> <span class="hljs-string">"10000"</span> <span class="hljs-built_in">--instances</span> <span class="hljs-string">"10000"</span> <span class="hljs-built_in">--ram</span> <span class="hljs-string">"10240000"</span> <span class="hljs-built_in">--server-groups</span> <span class="hljs-string">"5000"</span> \
+  <span class="hljs-built_in">--server-group-members</span> <span class="hljs-string">"50"</span> <span class="hljs-built_in">--gigabytes</span> <span class="hljs-string">"30000"</span> <span class="hljs-built_in">--volumes</span> <span class="hljs-string">"10000"</span> <span class="hljs-built_in">--secgroups</span> <span class="hljs-string">"10000"</span> \
+  <span class="hljs-built_in">--ports</span> <span class="hljs-string">"100000"</span> <span class="hljs-built_in">--secgroup-rules</span> <span class="hljs-string">"100000"</span> <span class="hljs-string">service
+</span>
+<span class="hljs-string">openstack </span><span class="hljs-string">quota </span><span class="hljs-string">set </span><span class="hljs-built_in">--routers</span> -1 <span class="hljs-built_in">--networks</span> -1 <span class="hljs-built_in">--subnets</span> -1 <span class="hljs-built_in">--secgroups</span> -1 \
+  <span class="hljs-built_in">--secgroup-rules</span> -1 <span class="hljs-built_in">--floating-ips</span> -1 <span class="hljs-built_in">--ports</span> -1 <span class="hljs-built_in">--cores</span> -1 <span class="hljs-built_in">--ram</span> -1 \
+  <span class="hljs-built_in">--instances</span> <span class="hljs-string">500 </span><span class="hljs-built_in">--volumes</span> <span class="hljs-string">100 </span><span class="hljs-built_in">--snapshots</span> <span class="hljs-string">100 </span><span class="hljs-string">admin</span>
+</code></pre>
+<h3 id="images">Images</h3>
+<h4 id="openstack-deployment-customization">OpenStack deployment customization</h4>
+<p>The glance image and nova flavor installation is automated via openstack-ops playbooks</p>
+<pre><code class="lang-bash">cd /opt/openstack-ops/playbooks
+( /root/.venvs/openstack-ops/bin/ansible-playbook configure-glance<span class="hljs-selector-class">.yml</span> configure-nova<span class="hljs-selector-class">.yml</span> configure-neutron<span class="hljs-selector-class">.yml</span> )
+</code></pre>
+<h4 id="manual-installation-of-oss-vm-images">Manual installation of OSS VM images</h4>
+<p>!!! note
+    Manual installation is only necessary when the automation above fails and images can be uploaded manually:</p>
+<pre><code class="lang-bash">kubectl exec -itn openstack openstack-admin-client -- bash
+
+curl https://cloud-images.ubuntu.com/releases/jammy/release/ubuntu-22.04-server-cloudimg-amd64.img \
+  -<span class="ruby">o /tmp/ubuntu-<span class="hljs-number">22.04</span>-server-cloudimg-amd64.img 
+</span>
+curl https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img \
+  -<span class="ruby">o /tmp/ubuntu-<span class="hljs-number">24.04</span>-server-cloudimg-amd64.img
+</span>
+openstack image create --container-format bare --disk-format qcow2 \
+  -<span class="ruby">-property hw_vif_multiqueue_enabled=<span class="hljs-literal">true</span> \
+</span>  -<span class="ruby">-property hypervisor_type=kvm \
+</span>  -<span class="ruby">-property img_config_drive=optional \
+</span>  -<span class="ruby">-property os_require_quiesce=yes \
+</span>  -<span class="ruby">-progress --file /tmp/ubuntu-<span class="hljs-number">22.04</span>-server-cloudimg-amd64.img <span class="hljs-string">"Ubuntu 22.04"</span>
+</span>
+openstack image create --container-format bare \
+  -<span class="ruby">-disk-format qcow2 \
+</span>  -<span class="ruby">-property hw_vif_multiqueue_enabled=<span class="hljs-literal">true</span> \
+</span>  -<span class="ruby">-property hypervisor_type=kvm \
+</span>  -<span class="ruby">-property img_config_drive=optional \
+</span>  -<span class="ruby">-property os_require_quiesce=yes \
+</span>  -<span class="ruby">-progress --file /tmp/ubuntu-<span class="hljs-number">24.04</span>-server-cloudimg-amd64.img <span class="hljs-string">"Ubuntu 24.04"</span></span>
+</code></pre>
+<hr>
+<h1 id="alerting-install-optional-">Alerting Install (Optional)</h1>
+<h2 id="alerting-installation">Alerting installation</h2>
+<p>Alerting to Rackspace is accomplished via standard Kubernetes components and a proxy to forward Rackspace ticket API:</p>
+<pre><code class="lang-mermaid">%%{ init: {<span class="hljs-string">"theme"</span>: <span class="hljs-string">"mc"</span>,
+           <span class="hljs-string">"layout"</span>: <span class="hljs-string">"dagre"</span>}
+}%%
+
+flowchart TB
+ subgraph AWS[<span class="hljs-string">"AWS"</span>]
+        watchman[<span class="hljs-string">"Rackspace Watchman Pipeline (SQS)"</span>]
+  end
+ subgraph genestack[<span class="hljs-string">"OpenStack Cluster"</span>]
+        prom[<span class="hljs-string">"Prometheus"</span>]
+        alertproxy[<span class="hljs-string">"Rackspace Alert Proxy"</span>]
+        Alertmanager[<span class="hljs-string">"Alertmanager"</span>]
+        osExp[<span class="hljs-string">"OpenStack Exporter"</span>]
+        blkExp[<span class="hljs-string">"BlackBox Exporter"</span>]
+        osapi[<span class="hljs-string">"OpenStack API"</span>]
+        nodeeExp[<span class="hljs-string">"Node Exporter"</span>]
+        mariadbExp[<span class="hljs-string">"MySQL Exporter"</span>]
+        mariadb[<span class="hljs-string">"MariaDB"</span>]
+        rabbitExp[<span class="hljs-string">"RabbitMQ Exporter"</span>]
+        rabbitmq[<span class="hljs-string">"RabbitMQ Pods"</span>]
+        postgresExp[<span class="hljs-string">"PostgreSQL Exporter"</span>]
+        postgres[<span class="hljs-string">"PostgreSQL DB"</span>]
+        grafana[<span class="hljs-string">"Grafana UI"</span>]
+        Loki[<span class="hljs-string">"Loki"</span>]
+  end
+    <span class="hljs-function"><span class="hljs-title">alertproxy</span> --&gt;</span> Alertmanager &amp; AWS
+    A<span class="hljs-function"><span class="hljs-title">lertmanager</span> --&gt;</span> prom
+    <span class="hljs-function"><span class="hljs-title">osExp</span> --&gt;</span> prom
+    <span class="hljs-function"><span class="hljs-title">osapi</span> --&gt;</span> osExp &amp; blkExp
+    <span class="hljs-function"><span class="hljs-title">blkExp</span> --&gt;</span> prom
+    <span class="hljs-function"><span class="hljs-title">nodeeExp</span> --&gt;</span> prom
+    <span class="hljs-function"><span class="hljs-title">mariadb</span> ---&gt;</span> mariadbExp
+    <span class="hljs-function"><span class="hljs-title">mariadbExp</span> --&gt;</span> prom
+    <span class="hljs-function"><span class="hljs-title">rabbitmq</span> --&gt;</span> rabbitExp
+    <span class="hljs-function"><span class="hljs-title">rabbitExp</span> --&gt;</span> prom
+    <span class="hljs-function"><span class="hljs-title">postgres</span> --&gt;</span> postgresExp
+    <span class="hljs-function"><span class="hljs-title">postgresExp</span> --&gt;</span> prom
+    <span class="hljs-function"><span class="hljs-title">prom</span> --&gt;</span> grafana &amp; Loki
+    <span class="hljs-function"><span class="hljs-title">mariadb</span> --&gt;</span> grafana
+    AWS --&gt; core[<span class="hljs-string">"Rackspace Ticket System"</span>]
+
+    prom@{ shape: h-cyl}
+</code></pre>
+<h3 id="installation">Installation</h3>
+<p>To begin the rollout you have to retrieve the Rackspace API secret,
+which can be retrieved by <a href="https://github.com/rcbops/ops-scripts/blob/master/watchman-token.py">watchman-token.py</a></p>
+<pre><code class="lang-bash">Example <span class="hljs-string">output:</span>
+
+Racker <span class="hljs-string">Token:</span> AACnP4t-B8zhwKLZqAWctVhowyoudoing9YB0<span class="hljs-number">-0</span>IG57l9bNK6c8gOaa9Ek7BVySMu6xgJILkqEZ7CQTYSaHmcZc8RHJHTPhjf0tDksepyvFA9xRZyAJv931E
+<span class="hljs-string">Secret:</span> ce4hello313477d95b48531fc6c90841034ec159db80f4b00006996f59f80317
+</code></pre>
+<h4 id="configure-proxies">Configure proxies</h4>
+<pre><code class="lang-bash"><span class="hljs-built_in">mkdir</span> /etc/genestack/helm-configs/alert-proxy /etc/genestack/helm-configs/kube-prometheus-stack
+
+<span class="hljs-keyword">cat</span> &lt;&lt; EOT &gt; /etc/genestack/helm-configs/alert-proxy/alert-proxy-overrides.yaml
+debu<span class="hljs-variable">g:</span> false
+app_debu<span class="hljs-variable">g:</span> false
+loggin<span class="hljs-variable">g:</span>
+  log_leve<span class="hljs-variable">l:</span> INFO
+alert_proxy_confi<span class="hljs-variable">g:</span>
+  alert_verification: true
+  create_ticke<span class="hljs-variable">t:</span> false
+  core_account_id: `<span class="hljs-keyword">cat</span> ~/.rackspace/customer_number || <span class="hljs-keyword">echo</span> <span class="hljs-number">12345</span>`
+  core_overseer_id: `<span class="hljs-built_in">hostname</span> -s |awk -F- <span class="hljs-string">'{print $1}'</span>`
+  account_secre<span class="hljs-variable">t:</span> <span class="hljs-number">21</span>c7c712d187c65f7536ecabec5049b0768581131c068d492a94157541292519
+  alert_manager_ur<span class="hljs-variable">l:</span> http://kube-prometheus-stack-alertmanager.prometheus.svc.cluster.loca<span class="hljs-variable">l:9093</span>/api/v2/alerts
+  http_route_fqdn: http<span class="hljs-variable">s:</span>//watchman.api.manage.rackspace.<span class="hljs-keyword">com</span>/v1/hybrid:`<span class="hljs-keyword">cat</span> ~/.rackspace/customer_number || <span class="hljs-keyword">echo</span> <span class="hljs-number">12345</span>`/webhook
+EOT
+
+<span class="hljs-keyword">cat</span> &lt;&lt; EOT &gt; /etc/genestack/helm-configs/kube-prometheus-stack/alertmanager_config.yaml
+alertmanager:
+  confi<span class="hljs-variable">g:</span>
+    globa<span class="hljs-variable">l:</span>
+      resolve_timeou<span class="hljs-variable">t:</span> <span class="hljs-number">5</span><span class="hljs-keyword">m</span>
+    inhibit_rule<span class="hljs-variable">s:</span>
+      - source_matcher<span class="hljs-variable">s:</span>
+          - <span class="hljs-string">'severity = critical'</span>
+        target_matcher<span class="hljs-variable">s:</span>
+          - <span class="hljs-string">'severity =~ warning|info'</span>
+        equa<span class="hljs-variable">l:</span>
+          - <span class="hljs-string">'namespace'</span>
+          - <span class="hljs-string">'alertname'</span>
+      - source_matcher<span class="hljs-variable">s:</span>
+          - <span class="hljs-string">'severity = warning'</span>
+        target_matcher<span class="hljs-variable">s:</span>
+          - <span class="hljs-string">'severity = info'</span>
+        equa<span class="hljs-variable">l:</span>
+          - <span class="hljs-string">'namespace'</span>
+          - <span class="hljs-string">'alertname'</span>
+      - source_matcher<span class="hljs-variable">s:</span>
+          - <span class="hljs-string">'alertname = InfoInhibitor'</span>
+        target_matcher<span class="hljs-variable">s:</span>
+          - <span class="hljs-string">'severity = info'</span>
+        equa<span class="hljs-variable">l:</span>
+          - <span class="hljs-string">'namespace'</span>
+      - target_matcher<span class="hljs-variable">s:</span>
+          - <span class="hljs-string">'alertname = InfoInhibitor'</span>
+    route:
+      group_by: [<span class="hljs-string">'namespace'</span>]
+      group_wai<span class="hljs-variable">t:</span> <span class="hljs-number">30</span>s
+      group_interva<span class="hljs-variable">l:</span> <span class="hljs-number">5</span><span class="hljs-keyword">m</span>
+      repeat_interva<span class="hljs-variable">l:</span> <span class="hljs-number">12</span>h
+      route<span class="hljs-variable">s:</span>
+        - receiver: <span class="hljs-string">'null'</span>
+          matcher<span class="hljs-variable">s:</span>
+            - alertname = <span class="hljs-string">"Watchdog"</span>
+        - receiver: <span class="hljs-string">'all_alerts_receiver'</span>
+          <span class="hljs-keyword">continue</span>: true
+          matcher<span class="hljs-variable">s:</span>
+            - severity =~ <span class="hljs-string">"critical"</span>
+        - receiver: <span class="hljs-string">'alert_proxy_receiver'</span>
+    receiver<span class="hljs-variable">s:</span>
+      - name: <span class="hljs-string">'null'</span>
+      - name: <span class="hljs-string">'alert_proxy_receiver'</span> 
+        webhook_config<span class="hljs-variable">s:</span>
+          - ur<span class="hljs-variable">l:</span> <span class="hljs-string">'http://alert-proxy.rackspace.svc.cluster.local/alert/process'</span>
+            send_resolved: false
+      #- name: <span class="hljs-string">'msteams_config'</span>
+      #  msteams_config<span class="hljs-variable">s:</span>
+      #  - send_resolved: true
+      #    webhook_ur<span class="hljs-variable">l:</span> <span class="hljs-string">''</span>
+EOT
+</code></pre>
+<h4 id="alert-proxy-installation">Alert Proxy installation</h4>
+<p>The Rackspace alert proxy is installed inside the <code>rackspace</code> namepspace and acts as middle-man between
+alertmanager and the Rackspace ticket API. Once installed, the alertmanager configuration must be updated
+to designate the proxy as receiver:</p>
+<pre><code class="lang-bash">git clone https:<span class="hljs-regexp">//gi</span>thub.com<span class="hljs-regexp">/rackerlabs/</span>alert-proxy <span class="hljs-regexp">/opt/</span>alert-proxy
+
+<span class="hljs-regexp">/opt/</span>alert-proxy<span class="hljs-regexp">/bin/</span>create_secrets.sh
+<span class="hljs-regexp">/opt/</span>alert-proxy<span class="hljs-regexp">/bin/i</span>nstall-alert-proxy.sh
+</code></pre>
+<pre><code class="lang-bash"><span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/bin/i</span>nstall-kube-prometheus-stack.sh
+</code></pre>
+<hr>
+<h1 id="qc-and-handover">QC and Handover</h1>
+<h2 id="qc-openstack-configuration">QC OpenStack configuration</h2>
+<p>Before starting the environment QC, basic configurations need to be in place such as flavors or images.
+That configuration process is automated with the openstack-ops module:</p>
+<pre><code class="lang-bash">cd /opt/openstack-ops/playbooks
+( /root/.venvs/openstack-ops/bin/ansible-playbook configure-glance<span class="hljs-selector-class">.yml</span> configure-neutron<span class="hljs-selector-class">.yml</span> configure-nova<span class="hljs-selector-class">.yml</span> )
+</code></pre>
+<h2 id="create-openstack-users-and-projects">Create OpenStack users and projects</h2>
+<p>OpenStack projects help you to organize and manage your cloud more effeciently,
+while user entities allow you to granularly control permissions. One user
+might have multiple roles in different projects.</p>
+<p>To create an OpenStack project, complete the following steps:</p>
+<ul>
+<li>Create an OpenStack project</li>
+</ul>
+<pre><code class="lang-shell">   openstack project create &lt;PROJECT_NAME<span class="hljs-string">|PROJECT_ID&gt;</span>
+</code></pre>
+<ul>
+<li>Create an OpenStack user in this project</li>
+</ul>
+<pre><code class="lang-shell">   <span class="hljs-comment">openstack</span> <span class="hljs-comment">user</span> <span class="hljs-comment">create</span> &lt;<span class="hljs-comment">USER_NAME</span>&gt; <span class="hljs-literal">-</span><span class="hljs-literal">-</span><span class="hljs-comment">password</span> <span class="hljs-comment">$(openssl</span> <span class="hljs-comment">rand</span> <span class="hljs-literal">-</span><span class="hljs-comment">base64</span> <span class="hljs-comment">32)</span> <span class="hljs-comment">\</span>
+      <span class="hljs-literal">-</span><span class="hljs-literal">-</span><span class="hljs-comment">project</span> &lt;<span class="hljs-comment">PROJECT_NAME|PROJECT_ID</span>&gt; <span class="hljs-literal">-</span><span class="hljs-literal">-</span><span class="hljs-comment">enable</span>
+</code></pre>
+<ul>
+<li>Assign the <em>admin</em> role to the user, if needed</li>
+</ul>
+<pre><code class="lang-shell">   openstack <span class="hljs-keyword">role</span> <span class="hljs-title">add</span> --<span class="hljs-keyword">user</span> <span class="hljs-title">&lt;USER_NAME</span>&gt; --project <span class="hljs-tag">&lt;PROJECT_NAME|PROJECT_ID&gt;</span> admin
+</code></pre>
+<h3 id="configure-external-and-internal-qc-neutron-networks">Configure external and internal QC Neutron networks</h3>
+<p>Neutron is preconfigured with a global physnet MTU of <em>9000</em> and all networks will inherit it.
+The DHCP service in neutron will pass along a maximum MTU (<em>1500</em> for VxLAN) for each port.
+In some circumstances, it is desired to lower the MTU to prevent fragmentation issues,
+in such cases the <code>--mtu 1500</code> option can be added to the <code>openstack network create</code>
+command.
+A standard MTU like 1500 is generally advisable for all Internet facing networks
+like gateway network.</p>
+<ul>
+<li>Create external (Internet/Public facing) provider network (VLAN only)</li>
+</ul>
+<pre><code class="lang-shell">   openstack network create GATEWAY_NET --mtu <span class="hljs-number">1500</span> --external --provider-physical-network \
+     physnet1 --share --provider-network-type vlan --provider-segment &lt;VLAN ID&gt;
+
+   openstack subnet create \
+     --subnet-range <span class="hljs-number">10.241</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">22</span> --gateway <span class="hljs-number">10.241</span><span class="hljs-number">.0</span><span class="hljs-number">.1</span> \
+     --dns-nameserver &lt;DNS1&gt; --dns-nameserver &lt;DNS2&gt; \
+     --network GATEWAY_NET --allocation-pool start=<span class="hljs-number">10.241</span><span class="hljs-number">.0</span><span class="hljs-number">.10</span>,end=<span class="hljs-number">10.241</span><span class="hljs-number">.3</span><span class="hljs-number">.254</span> GATEWAY_SUBNET_1
+</code></pre>
+<ul>
+<li>Create a external router for RPC QC Testing</li>
+</ul>
+<pre><code class="lang-shell">   openstack router <span class="hljs-built_in">create</span> <span class="hljs-comment">--ha RPC_GATEWAY_NET_QC</span>
+   openstack router <span class="hljs-built_in">set</span> <span class="hljs-comment">--enable-snat --external-gateway GATEWAY_NET RPC_GATEWAY_NET_QC</span>
+</code></pre>
+<ul>
+<li>Create RPC QC Test Network (VXLAN)</li>
+</ul>
+<pre><code class="lang-shell">   openstack network create RPC_QC_NET \
+     --provider-network-type vxlan
+
+   openstack subnet create \
+     --subnet-range <span class="hljs-number">192.168</span><span class="hljs-number">.0</span><span class="hljs-number">.0</span>/<span class="hljs-number">24</span> --gateway <span class="hljs-number">192.168</span><span class="hljs-number">.0</span><span class="hljs-number">.1</span> \
+     --dns-nameserver <span class="hljs-number">1.1</span><span class="hljs-number">.1</span><span class="hljs-number">.1</span> \
+     --network RPC_QC_NET --allocation-pool start=<span class="hljs-number">192.168</span><span class="hljs-number">.0</span><span class="hljs-number">.10</span>,end=<span class="hljs-number">192.168</span><span class="hljs-number">.0</span><span class="hljs-number">.254</span> RPC_QC_SUBNET_1
+</code></pre>
+<ul>
+<li>Assign RPC QC Network to the Neutron Router</li>
+</ul>
+<pre><code class="lang-shell">   openstack router <span class="hljs-keyword">add </span><span class="hljs-keyword">subnet </span> RPC_GATEWAY_NET_QC RPC_QC_SUBNET_1
+</code></pre>
+<h3 id="create-a-floating-ip">Create a floating IP</h3>
+<p>Create a floating IP in the <code>GATEWAY_NET</code> network and associate it with the
+corresponding port by using the following commands:</p>
+<pre><code class="lang-shell">   openstack <span class="hljs-keyword">port</span> list
+   openstack <span class="hljs-keyword">floating</span> ip create --project <span class="hljs-variable">&lt;PROJECT_NAME|PROJECT_ID&gt;</span> GATEWAY_NET
+
+   <span class="hljs-comment"># either ONE of the following</span>
+   openstack server add <span class="hljs-keyword">floating</span> ip <span class="hljs-variable">&lt;SERVER_NAME&gt;</span> <span class="hljs-variable">&lt;FLOATING_IP_ADDRESS&gt;</span>
+   openstack <span class="hljs-keyword">floating</span> ip <span class="hljs-built_in">set</span> --port <span class="hljs-variable">&lt;NEUTRON_PORT_UUID&gt;</span> <span class="hljs-variable">&lt;FLOATING_IP_UUID&gt;</span>
+</code></pre>
+<h3 id="perform-quality-control-tests">Perform quality control tests</h3>
+<p>After deployment, perform the postdeployment tests documented in the
+Rackspace OpenStack QC protocol.</p>
+<p>These tests verify the following items:</p>
+<ul>
+<li><p>Configuration persists after reboots</p>
+</li>
+<li><p>The appropriate version of OpenStack Enterprise is installed</p>
+</li>
+<li><p>The OpenStack environment contains the correct components and works
+correctly</p>
+</li>
+</ul>
+<h4 id="verify-openstack-operation">Verify OpenStack Operation</h4>
+<p>Perform the following tasks to verify basic operation of the
+OpenStack API and the Dashboard.</p>
+<p>Every controller node provides a CLI environment for additional
+configuration and testing.</p>
+<pre><code class="lang-shell">   <span class="hljs-keyword">source</span> <span class="hljs-regexp">/opt/g</span>enestack<span class="hljs-regexp">/scripts/g</span>enestack.rc
+</code></pre>
+<ul>
+<li>Run an OpenStack command that uses one or more APIs. For example:</li>
+</ul>
+<pre><code class="lang-shell">   <span class="hljs-comment"># openstack user list</span>
+   +----------------------------------+--------------------+
+   |<span class="hljs-string"> ID                               </span>|<span class="hljs-string"> Name               </span>|
+   +----------------------------------+--------------------+
+   |<span class="hljs-string"> 34630451efd24d52935d92ed09fdd3b1 </span>|<span class="hljs-string"> admin              </span>|
+   |<span class="hljs-string"> 71576fc1c94544b7a6ec8691305bcd1e </span>|<span class="hljs-string"> octavia            </span>|
+   |<span class="hljs-string"> 2208c89dca894b25bd8eabd80c66fc00 </span>|<span class="hljs-string"> swift              </span>|
+   |<span class="hljs-string"> 7018f17f544246fb862a6c40a543032a </span>|<span class="hljs-string"> barbican           </span>|
+   |<span class="hljs-string"> 42c1b5473a024c0886d66c119c311a6a </span>|<span class="hljs-string"> placement          </span>|
+   |<span class="hljs-string"> 567c4cdf04024c869ce2ba1c12c933db </span>|<span class="hljs-string"> glance             </span>|
+   |<span class="hljs-string"> ad47bd3ea7d946338c08016cef78ee31 </span>|<span class="hljs-string"> cinder             </span>|
+   |<span class="hljs-string"> a0fa36762f774105b436532f8178feba </span>|<span class="hljs-string"> neutron            </span>|
+   |<span class="hljs-string"> e29be3c0c62349d49e20b52ea3b826cd </span>|<span class="hljs-string"> heat               </span>|
+   |<span class="hljs-string"> 69a475de2de346169f94271daf0f6c19 </span>|<span class="hljs-string"> stack_domain_admin </span>|
+   |<span class="hljs-string"> a45148e94fda479fa55dbfc87dc674ec </span>|<span class="hljs-string"> designate          </span>|
+   |<span class="hljs-string"> 7b626962a9914d358c947ef6577d63de </span>|<span class="hljs-string"> ironic             </span>|
+   |<span class="hljs-string"> 55c2d4fd5e444de89ff6c31717414700 </span>|<span class="hljs-string"> nova               </span>|
+   |<span class="hljs-string"> 8f560db02d15451bbd8bbbaed7126b43 </span>|<span class="hljs-string"> masakari           </span>|
+   +----------------------------------+--------------------+
+</code></pre>
+<ul>
+<li><p>Follow the Rackspace QC protocol that </p>
+<ul>
+<li>Create Security Groups</li>
+<li>Create SSH Key</li>
+<li>Uploads Glance Images</li>
+<li>Create QC Network</li>
+<li>Create VMs with boot from volume via cinder</li>
+<li>Login test</li>
+</ul>
+</li>
+</ul>
+<h5 id="verify-the-dashboard">Verify the dashboard</h5>
+<ul>
+<li><p>With a web browser, access the Dashboard by using the external load
+IP address defined by the public endpoints domain such as</p>
+<p><a href="https://cloud-userX.ftigenestack.site">https://cloud-userX.ftigenestack.site</a></p>
+</li>
+</ul>
+<ul>
+<li>Authenticate by using the username <code>admin</code> user name and the
+password defined by the password from the clouds configuration
+<code>~/.config/openstack/clouds.yaml</code></li>
+</ul>
+</body></html>

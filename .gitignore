@@ -1,0 +1,26 @@
+# build output
+/genestack
+/dist/
+/overrides-preview/
+
+# local cluster config & run state (operator-specific, may contain hosts)
+/cluster.yaml
+/*-cluster.yaml
+/.*.state.json
+
+# lab secrets & build artifacts
+/lab/id_ed25519
+/lab/id_ed25519.pub
+/lab/*.linux
+
+# local editor / harness settings
+.claude/settings.local.json
+
+# run logs
+logs/
+
+# editor
+.DS_Store
+
+# asciinema recordings (may capture live host data — keep out of the repo)
+*.cast

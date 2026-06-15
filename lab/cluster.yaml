@@ -1,0 +1,21 @@
+name: gs-lab
+region: RegionOne
+domain: api.lab.local
+ansible_port: 22
+deployment:
+  host: 192.168.139.52
+  user: root
+  port: 22
+  key_path: /Users/sapd/WORK/Rackspace/labs/genestack-cli/lab/id_ed25519
+k8s:
+  cluster_name: cluster.local
+  kube_ovn_iface: br-overlay
+  kube_service_addresses: 10.233.0.0/18
+  kube_pods_subnet: 10.236.0.0/14
+nodes:
+  - name: gs-ctl1
+    ansible_host: 192.168.139.142
+    roles: [controller]
+  - name: gs-cmp1
+    ansible_host: 192.168.139.182
+    roles: [compute]
