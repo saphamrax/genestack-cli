@@ -369,3 +369,38 @@ func cmdInventory(cfgPath string, args []string) error {
 	os.Stdout.Write(b)
 	return nil
 }
+
+// cmdValidate runs structural checks on the cluster config and reports all
+// problems. It exits non-zero when there are errors, or (with --strict) when
+// there are warnings.
+func cmdValidate(cfgPath string, args []string) error {
+	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
+	strict := fs.Bool("strict", false, "treat warnings as errors")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	c, err := loadCluster(cfgPath)
+	if err != nil {
+		return err
+	}
+	rep := c.Check()
+
+	for _, w := range rep.Warnings {
+		fmt.Printf("⚠ %s\n", w)
+	}
+	for _, e := range rep.Errors {
+		fmt.Printf("✗ %s\n", e)
+	}
+
+	if rep.HasErrors() {
+		return fmt.Errorf("validation failed: %d error(s), %d warning(s)", len(rep.Errors), len(rep.Warnings))
+	}
+	if *strict && len(rep.Warnings) > 0 {
+		return fmt.Errorf("validation failed: %d warning(s) (--strict)", len(rep.Warnings))
+	}
+
+	controllers := len(c.GroupMembers(model.GroupKubeControlPlane))
+	fmt.Printf("✓ %s: valid (%d nodes, %d controllers)\n", cfgPath, len(c.Nodes), controllers)
+	return nil
+}

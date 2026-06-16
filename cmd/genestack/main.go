@@ -69,6 +69,8 @@ func main() {
 		err = cmdNode(*cfgPath, args)
 	case "inventory", "inv":
 		err = cmdInventory(*cfgPath, args)
+	case "validate", "check":
+		err = cmdValidate(*cfgPath, args)
 	case "overrides", "ov":
 		err = cmdOverrides(*cfgPath, args)
 	case "phases":

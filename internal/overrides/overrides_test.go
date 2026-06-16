@@ -104,6 +104,56 @@ func TestPlanPassthroughOverrides(t *testing.T) {
 	}
 }
 
+func TestCustomServiceHosts(t *testing.T) {
+	c := testCluster()
+	c.Overrides.Endpoints.Hosts = map[string]string{
+		"keystone": "keystone-user4.ftigenestack.site",
+		"skyline":  "cloud-user4.ftigenestack.site", // gateway-only
+	}
+	files := Managed(c)
+
+	// Catalog layer: keystone overridden, un-set services keep <prefix>.<domain>.
+	ep, ok := find(files, "global_overrides/endpoints.yaml")
+	if !ok {
+		t.Fatal("endpoints.yaml not generated")
+	}
+	eps := string(ep.Content)
+	if !strings.Contains(eps, "host: keystone-user4.ftigenestack.site") {
+		t.Error("endpoints.yaml did not use the custom keystone host")
+	}
+	if !strings.Contains(eps, "host: nova.api.openstack.example.com") {
+		t.Error("endpoints.yaml should keep the default nova host")
+	}
+
+	// Gateway layer: patch script lists overridden services only.
+	gw, ok := find(files, "gateway/patch-routes.sh")
+	if !ok {
+		t.Fatal("patch-routes.sh not generated")
+	}
+	gws := string(gw.Content)
+	if !strings.Contains(gws, "patch httproute keystone") ||
+		!strings.Contains(gws, "keystone-user4.ftigenestack.site") {
+		t.Error("patch-routes.sh missing keystone route override")
+	}
+	if !strings.Contains(gws, "patch httproute skyline") ||
+		!strings.Contains(gws, "cloud-user4.ftigenestack.site") {
+		t.Error("patch-routes.sh missing skyline route override")
+	}
+	if strings.Contains(gws, "patch httproute nova") {
+		t.Error("patch-routes.sh should not touch un-overridden services")
+	}
+}
+
+func TestGatewayRoutesEmptyIsNoOp(t *testing.T) {
+	gw, ok := find(Managed(testCluster()), "gateway/patch-routes.sh")
+	if !ok {
+		t.Fatal("patch-routes.sh not generated")
+	}
+	if strings.Contains(string(gw.Content), "patch httproute") {
+		t.Errorf("expected a no-op script with no overrides, got:\n%s", gw.Content)
+	}
+}
+
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

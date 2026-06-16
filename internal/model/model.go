@@ -191,10 +191,15 @@ func (o *OVNConfig) fillDefaults() {
 }
 
 // EndpointsOverride tunes the generated global_overrides/endpoints.yaml. The
-// per-service public host is derived as "<prefix>.<domain>".
+// per-service public host is derived as "<prefix>.<domain>" unless an explicit
+// FQDN is given for that service in Hosts.
 type EndpointsOverride struct {
 	Scheme string `yaml:"scheme"` // public scheme, e.g. https
 	Port   int    `yaml:"port"`   // public port, e.g. 443
+	// Hosts overrides the public FQDN per service, keyed by the service prefix
+	// (e.g. keystone, glance, neutron, skyline, harbor). A service absent from
+	// the map falls back to "<prefix>.<domain>".
+	Hosts map[string]string `yaml:"hosts,omitempty"`
 }
 
 // NeutronOverride tunes neutron MTU settings.

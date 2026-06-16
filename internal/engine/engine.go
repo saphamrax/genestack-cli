@@ -218,6 +218,11 @@ func DefaultPhases() []Phase {
 					Cmd: "kubectl wait deployment --for=condition=Available --all --namespace envoyproxy-gateway-system --timeout=600s"},
 				{ID: "gw.setup", Title: "Setup flex gateway (HTTP routes)",
 					Cmd: "/opt/genestack/bin/setup-envoy-gateway.sh --email openstack-enterprise-ops@rackspace.com --domain {{DOMAIN}}"},
+				{ID: "gw.routes", Title: "Apply custom gateway hostnames", Optional: true,
+					// Overrides spec.hostnames on the genestack-created HTTPRoutes for
+					// any service in overrides.endpoints.hosts. No-op when none are set.
+					// Requires `overrides upload` to have shipped the generated script.
+					Cmd: "bash /etc/genestack/manifests/gateway/patch-routes.sh"},
 			},
 		},
 		{

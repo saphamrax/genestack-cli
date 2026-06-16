@@ -72,6 +72,14 @@ overrides: {endpoints, neutron, nova, prometheus}
 nodes: [{name, ansible_host, node_ip, roles:[controller|compute|network|storage], bridges:{}}]
 ```
 
+Public hostnames default to `<prefix>.<domain>`. Override per service with
+`overrides.endpoints.hosts: {keystone: keystone-user4.example.site, skyline: …}`
+— this drives both the service catalog (`endpoints.yaml`, grafana, barbican,
+probes via `overrides.host()`) **and** the gateway: a generated
+`manifests/gateway/patch-routes.sh` (step `gw.routes`) patches the
+genestack-created HTTPRoutes' `spec.hostnames`. Re-run `overrides upload` after
+editing `hosts`; verify route names with `kubectl -n openstack get httproute`.
+
 `ansible_host` = SSH/management address (e.g. WAN). `node_ip` = the private
 cluster IP kubespray binds k8s/etcd to (→ `ip`/`access_ip`). Editing
 `cluster.yaml` does **not** auto-sync to the deployer — re-run `overrides upload`

@@ -33,6 +33,7 @@ SETUP COMMANDS
   node                  add / list / remove nodes
   inventory             print / write / upload the generated inventory.yaml
   overrides             manage generated + passthrough override files
+  validate              structural checks on cluster.yaml
   connect               test connectivity to the deployment host
 
 DEPLOY COMMANDS
@@ -143,6 +144,28 @@ EXAMPLES
   genestack inventory
   genestack inventory --output inventory.yaml
   genestack inventory --upload
+`,
+
+	"validate": `genestack validate — structural checks on cluster.yaml
+
+USAGE
+  genestack validate [--strict]
+
+DESCRIPTION
+  Reports every structural problem in cluster.yaml at once: missing required
+  fields, duplicate node names / ansible_host / node_ip, nodes without roles,
+  invalid role names, and the absence of a controller. Likely-unintended or
+  incomplete settings (no node_ip, placeholder domain, unreadable key_path)
+  are shown as warnings. It does not parse IPs or CIDRs.
+
+  Exits non-zero when there are errors.
+
+FLAGS
+  --strict   treat warnings as errors (exit non-zero on warnings too)
+
+EXAMPLES
+  genestack validate
+  genestack validate --strict
 `,
 
 	"overrides": `genestack overrides — manage helm-override / manifest files
@@ -333,9 +356,10 @@ EXAMPLE
 
 // helpAliases maps command aliases to their canonical name for help lookup.
 var helpAliases = map[string]string{
-	"inv": "inventory",
-	"ov":  "overrides",
-	"ui":  "tui",
+	"inv":   "inventory",
+	"ov":    "overrides",
+	"ui":    "tui",
+	"check": "validate",
 }
 
 // printHelp prints the overview (empty name) or a command's detailed help.
