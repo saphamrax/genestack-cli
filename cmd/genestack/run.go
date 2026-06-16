@@ -385,6 +385,8 @@ func cmdValidate(cfgPath string, args []string) error {
 		return err
 	}
 	rep := c.Check()
+	// Network/CIDR checks (the same ones the kubernetes deploy preflight runs).
+	rep.Errors = append(rep.Errors, c.CheckNetworks()...)
 
 	for _, w := range rep.Warnings {
 		fmt.Printf("⚠ %s\n", w)

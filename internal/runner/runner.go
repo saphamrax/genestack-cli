@@ -37,12 +37,34 @@ func (r *Runner) Expand(cmd string) string {
 		"{{OVN_MAPPINGS}}", c.OVN.Mappings,
 		"{{OVN_AZ}}", c.OVN.AvailabilityZone,
 		"{{KUBE_OVN_IFACE}}", c.K8s.KubeOVNIface,
+		"{{KUBE_PODS_SUBNET}}", c.K8s.KubePodsSubnet,
+		"{{KUBE_SERVICE_CIDR}}", c.K8s.KubeServiceCIDR,
 		// Exact node names by role (k8s node name == inventory hostname),
 		// avoiding brittle name-substring matching in label commands.
 		"{{CONTROLLER_NODES}}", nodeNames(c, model.Node.IsController),
 		"{{COMPUTE_NODES}}", nodeNames(c, model.Node.IsCompute),
+		// The inventory hostname of the deployment node when it is also a
+		// cluster node (else ""). Used to keep ansible from rebooting the host
+		// it is running on, which would kill the control session.
+		"{{DEPLOY_NODE}}", deployNodeName(c),
 	)
 	return repl.Replace(cmd)
+}
+
+// deployNodeName returns the inventory hostname of the node that is also the
+// deployment host, or "" when the deployer is a standalone jump host. It matches
+// the deployment host against each node's ansible_host, node_ip and name.
+func deployNodeName(c *model.Cluster) string {
+	h := c.Deployment.Host
+	if h == "" {
+		return ""
+	}
+	for _, n := range c.Nodes {
+		if n.AnsibleHost == h || n.NodeIP == h || n.Name == h {
+			return n.Name
+		}
+	}
+	return ""
 }
 
 // nodeNames returns the space-separated names of nodes matching pred.
@@ -66,8 +88,29 @@ func (r *Runner) RunStep(ctx context.Context, st engine.Step, onLine func(string
 		return r.uploadInventory(ctx, onLine)
 	case engine.ActionUploadOverrides:
 		return r.uploadOverrides(ctx, onLine)
+	case engine.ActionValidateNetworks:
+		return r.validateNetworks(onLine)
 	}
 	return r.runCommand(ctx, r.Expand(st.Cmd), onLine)
+}
+
+// validateNetworks fails the step when the pod/service CIDRs overlap each other
+// or any node/bridge IP, printing every problem first.
+func (r *Runner) validateNetworks(onLine func(string)) error {
+	errs := r.Cluster.CheckNetworks()
+	if len(errs) == 0 {
+		if onLine != nil {
+			onLine(fmt.Sprintf("pod CIDR %s and service CIDR %s are valid and non-overlapping",
+				r.Cluster.K8s.KubePodsSubnet, r.Cluster.K8s.KubeServiceCIDR))
+		}
+		return nil
+	}
+	if onLine != nil {
+		for _, e := range errs {
+			onLine("✗ " + e)
+		}
+	}
+	return fmt.Errorf("network validation failed: %d problem(s)", len(errs))
 }
 
 func (r *Runner) runCommand(ctx context.Context, cmd string, onLine func(string)) error {

@@ -61,8 +61,9 @@ func (s Status) Icon() string {
 // Non-empty actions are handled specially by the runner (they generate a file
 // from the cluster model and upload it, rather than executing a shell command).
 const (
-	ActionUploadInventory = "upload-inventory"
-	ActionUploadOverrides = "upload-overrides"
+	ActionUploadInventory  = "upload-inventory"
+	ActionUploadOverrides  = "upload-overrides"
+	ActionValidateNetworks = "validate-networks"
 )
 
 // Step is a single executable unit within a phase.
@@ -103,8 +104,12 @@ func DefaultPhases() []Phase {
 					Cmd: "/opt/genestack/bootstrap.sh"},
 				{ID: "config.opsbootstrap", Title: "Run openstack-ops bootstrap.sh",
 					Cmd: "test -x /opt/openstack-ops/bootstrap.sh && /opt/openstack-ops/bootstrap.sh || echo 'openstack-ops not present, skipping'", Optional: true},
-				{ID: "config.groupvars", Title: "Seed inventory group_vars from genestack defaults",
-					Cmd: "mkdir -p /etc/genestack/inventory/group_vars; if [ -z \"$(ls -A /etc/genestack/inventory/group_vars)\" ]; then cp -r /opt/genestack/ansible/inventory/genestack/group_vars/. /etc/genestack/inventory/group_vars/; fi; ls /etc/genestack/inventory/group_vars/all/"},
+				{ID: "config.groupvars", Title: "Seed inventory group_vars + pin pod/service CIDRs",
+					// genestack's seeded group_vars hardcode kube_pods_subnet
+					// (10.236.0.0/14) which OVERRIDES the inventory.yaml value in
+					// Ansible precedence. Write a last-alphabetically override file in
+					// the k8s_cluster group so the model's CIDRs actually win.
+					Cmd: `GV=/etc/genestack/inventory/group_vars; mkdir -p "$GV"; if [ -z "$(ls -A "$GV")" ]; then cp -r /opt/genestack/ansible/inventory/genestack/group_vars/. "$GV"/; fi; mkdir -p "$GV/k8s_cluster"; printf '%s\n' '---' '# genestack-cli: override genestack pod/service CIDR defaults (must win)' 'kube_pods_subnet: {{KUBE_PODS_SUBNET}}' 'kube_service_addresses: {{KUBE_SERVICE_CIDR}}' > "$GV/k8s_cluster/zz-genestack-cli.yml"; cat "$GV/k8s_cluster/zz-genestack-cli.yml"`},
 				{ID: "config.inventory", Title: "Generate & upload inventory.yaml",
 					Action: ActionUploadInventory},
 				{ID: "config.overrides", Title: "Generate & upload override files",
@@ -122,13 +127,27 @@ func DefaultPhases() []Phase {
 					Cmd: "if [ -d /opt/openstack-ops/playbooks ]; then cd /opt/openstack-ops/playbooks && /root/.venvs/openstack-ops/bin/ansible-playbook configure-hosts.yml configure-bash-environment.yml configure-packagemanager.yml; else echo 'openstack-ops not present, skipping'; fi"},
 				{ID: "host.upgrade", Title: "apt update & dist-upgrade all nodes",
 					Cmd: rc + " && ansible all -m ansible.builtin.apt -a 'update_cache=true upgrade=dist'"},
-				{ID: "host.reboot", Title: "Reboot all nodes to apply new kernel (waits for return)",
-					Cmd: rc + " && ansible all -m reboot --become"},
+				{ID: "host.reboot", Title: "Reboot nodes to apply new kernel (excludes the deployer; waits for return)",
+					// {{DEPLOY_NODE}} is the deployer's own inventory name when it is
+					// also a cluster node. Rebooting it in-band would kill ansible /
+					// the control session ("new session: EOF"), so exclude it here and
+					// reboot it explicitly via host.reboot.self.
+					Cmd: rc + ` && if [ -n "{{DEPLOY_NODE}}" ]; then ansible 'all:!{{DEPLOY_NODE}}' -m reboot --become; else ansible all -m reboot --become; fi`},
+				{ID: "host.reboot.self", Title: "Reboot the deployer node itself (kills this session)", Optional: true,
+					// Opt-in (Optional => skipped on phase/--all runs). Schedules the
+					// reboot so the command returns first; reconnect afterwards and
+					// resume with `genestack run kubernetes`.
+					Cmd: `if [ -n "{{DEPLOY_NODE}}" ]; then echo "rebooting deployer {{DEPLOY_NODE}} in 1 min — reconnect, then: genestack run kubernetes"; shutdown -r +1; else echo "deployer is not a cluster node — nothing to reboot"; fi`},
 			},
 		},
 		{
 			ID: "kubernetes", Title: "Kubernetes (kubespray)",
 			Steps: []Step{
+				{ID: "k8s.preflight", Title: "Validate pod/service CIDRs (no overlap with node IPs)",
+					// kube_pods_subnet/kube_service_addresses are baked into the cluster
+					// at kubeadm init and are painful to change later — block the deploy
+					// here if they overlap each other or any node/bridge IP.
+					Action: ActionValidateNetworks},
 				{ID: "k8s.kubectl", Title: "Install kubectl binaries",
 					Cmd: `cd /opt/genestack/submodules/kubespray && curl -fsSLO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl`},
 				{ID: "k8s.cluster", Title: "Deploy cluster (cluster.yml, ~15-20m)",
@@ -144,12 +163,16 @@ func DefaultPhases() []Phase {
 		{
 			ID: "kube-ovn", Title: "CNI: Kube-OVN",
 			Steps: []Step{
-				{ID: "ovn.config", Title: "Copy kube-ovn helm overrides & set overlay iface",
+				{ID: "ovn.config", Title: "Copy kube-ovn helm overrides & set overlay iface + CIDRs",
 					// IFACE = geneve tunnel endpoint (keeps the NIC's L3). VLAN_INTERFACE_NAME
 					// is the kube-ovn vlan/underlay provider NIC, which gets bridged into OVS —
 					// blank it out so kube-ovn never swallows a node interface (genestack does
 					// provider networking via its own OVN, not kube-ovn's vlan provider).
-					Cmd: `F=/etc/genestack/helm-configs/kube-ovn/kube-ovn-helm-overrides.yaml; mkdir -p "$(dirname "$F")"; cp -n /opt/genestack/base-helm-configs/kube-ovn/kube-ovn-helm-overrides.yaml "$F" 2>/dev/null || true; sed -i -E 's#^([[:space:]]*IFACE:[[:space:]]*).*#\1"{{KUBE_OVN_IFACE}}"#; s#^([[:space:]]*VLAN_INTERFACE_NAME:[[:space:]]*).*#\1""#; s#^([[:space:]]*MIRROR_IFACE:[[:space:]]*).*#\1"mirror0"#; s#^([[:space:]]*DPDK_TUNNEL_IFACE:[[:space:]]*).*#\1"br-phy"#' "$F"; grep -nE '^[[:space:]]*(IFACE|VLAN_INTERFACE_NAME|MIRROR_IFACE|DPDK_TUNNEL_IFACE):' "$F"`},
+					// POD_CIDR/SVC_CIDR must match the kubespray kube_pods_subnet /
+					// kube_service_addresses (else kube-ovn allocates from a different
+					// range than k8s expects). genestack's base file ships its own
+					// defaults (e.g. POD_CIDR 10.236.0.0/14), so sync them from the model.
+					Cmd: `F=/etc/genestack/helm-configs/kube-ovn/kube-ovn-helm-overrides.yaml; mkdir -p "$(dirname "$F")"; cp -n /opt/genestack/base-helm-configs/kube-ovn/kube-ovn-helm-overrides.yaml "$F" 2>/dev/null || true; sed -i -E 's#^([[:space:]]*IFACE:[[:space:]]*).*#\1"{{KUBE_OVN_IFACE}}"#; s#^([[:space:]]*VLAN_INTERFACE_NAME:[[:space:]]*).*#\1""#; s#^([[:space:]]*MIRROR_IFACE:[[:space:]]*).*#\1"mirror0"#; s#^([[:space:]]*DPDK_TUNNEL_IFACE:[[:space:]]*).*#\1"br-phy"#; s#^([[:space:]]*POD_CIDR:[[:space:]]*).*#\1"{{KUBE_PODS_SUBNET}}"#; s#^([[:space:]]*SVC_CIDR:[[:space:]]*).*#\1"{{KUBE_SERVICE_CIDR}}"#' "$F"; grep -nE '^[[:space:]]*(IFACE|VLAN_INTERFACE_NAME|MIRROR_IFACE|DPDK_TUNNEL_IFACE|POD_CIDR|SVC_CIDR):' "$F"`},
 				{ID: "ovn.labels", Title: "Label nodes for Kube-OVN",
 					Cmd: `kubectl label node -l beta.kubernetes.io/os=linux kubernetes.io/os=linux --overwrite && kubectl label node -l node-role.kubernetes.io/control-plane kube-ovn/role=master --overwrite && kubectl label node -l ovn.kubernetes.io/ovs_dp_type!=userspace ovn.kubernetes.io/ovs_dp_type=kernel --overwrite`},
 				{ID: "ovn.install", Title: "Run install-kube-ovn.sh",

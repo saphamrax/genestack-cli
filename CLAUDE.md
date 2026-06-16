@@ -35,7 +35,7 @@ The linux binary is statically linked (drop it on any deployment host). Always
 | `model` | `Cluster`/`Node`/`Deployment`/`K8sVars`/`MetalLBConfig`/`OVNConfig`/`Overrides`; load/save `cluster.yaml`; role→inventory-group mapping (`GroupMembers`); defaults via `fillDefaults`/`Default*`. |
 | `inventory` | Renders `inventory.yaml` with a deterministic string builder (order matters, not yaml.Marshal). Emits `ip`/`access_ip` per node when `node_ip` set. |
 | `overrides` | Generates helm-override/manifest files from the model (endpoints, metallb pools, neutron MTU, nova, prometheus, grafana, blackbox probes, barbican) + loads operator **passthrough** files from local `overrides/` dir. `Plan()` merges them; **passthrough wins** on path clash. |
-| `engine` | `Phase`/`Step`/`Status`, `DefaultPhases()` (the pipeline), JSON run-state (`.<config>.state.json`), `helmAdopt()`, `RemoteInventoryPath`. A `Step` runs a shell `Cmd` **or** an `Action` (`upload-inventory`/`upload-overrides`). `Optional` steps are skipped on phase/`--all` runs. |
+| `engine` | `Phase`/`Step`/`Status`, `DefaultPhases()` (the pipeline), JSON run-state (`.<config>.state.json`), `helmAdopt()`, `RemoteInventoryPath`. A `Step` runs a shell `Cmd` **or** an `Action` (`upload-inventory`/`upload-overrides`/`validate-networks`). `Optional` steps are skipped on phase/`--all` runs. The `kubernetes` phase starts with `k8s.preflight` (`validate-networks`) which blocks the deploy if pod/service CIDRs overlap each other or any node/bridge IP. |
 | `exec` | `Executor` interface; `New(Config)` returns SSH (`ssh.go`) or Local (`local.go`) by `cfg.Local`. SSH uses `key_path` **exclusively** when set (else agent) to avoid MaxAuthTries. |
 | `runner` | Executes a step via the Executor; `Expand()` substitutes `{{PLACEHOLDERS}}`; handles the upload Actions. Holds `*model.Cluster` + `OverridesDir`. |
 | `runlog` | Per-run logs: `logs/<timestamp>/run.log` + `<step-id>.log`. nil-safe (`--no-log` passes nil). |
@@ -56,9 +56,12 @@ skip done steps. `genestack phases` / `genestack steps [phase]` show status.
 ## Placeholders (expanded by `runner.Expand`)
 
 `{{REGION}}` `{{DOMAIN}}` `{{OVN_INT_BRIDGE}}` `{{OVN_BRIDGES}}` `{{OVN_PORTS}}`
-`{{OVN_MAPPINGS}}` `{{OVN_AZ}}` `{{KUBE_OVN_IFACE}}` `{{CONTROLLER_NODES}}`
-`{{COMPUTE_NODES}}` — all sourced from `cluster.yaml`. Use these in step `Cmd`s
-instead of hardcoding site values or fragile `awk` node-name matching.
+`{{OVN_MAPPINGS}}` `{{OVN_AZ}}` `{{KUBE_OVN_IFACE}}` `{{KUBE_PODS_SUBNET}}`
+`{{KUBE_SERVICE_CIDR}}` `{{CONTROLLER_NODES}}`
+`{{COMPUTE_NODES}}` `{{DEPLOY_NODE}}` — all sourced from `cluster.yaml`. Use these
+in step `Cmd`s instead of hardcoding site values or fragile `awk` node-name
+matching. `{{DEPLOY_NODE}}` is the deployer's own inventory name when the
+deployment host is also a cluster node (else ""); see the reboot gotcha below.
 
 ## cluster.yaml (model) — key fields
 
@@ -74,11 +77,19 @@ nodes: [{name, ansible_host, node_ip, roles:[controller|compute|network|storage]
 
 Public hostnames default to `<prefix>.<domain>`. Override per service with
 `overrides.endpoints.hosts: {keystone: keystone-user4.example.site, skyline: …}`
-— this drives both the service catalog (`endpoints.yaml`, grafana, barbican,
-probes via `overrides.host()`) **and** the gateway: a generated
-`manifests/gateway/patch-routes.sh` (step `gw.routes`) patches the
-genestack-created HTTPRoutes' `spec.hostnames`. Re-run `overrides upload` after
-editing `hosts`; verify route names with `kubectl -n openstack get httproute`.
+— this drives the service catalog (`endpoints.yaml`, grafana, barbican, probes
+via `overrides.host()`) **and** the gateway. genestack builds the gateway from
+two layers that must agree: the **HTTPRoute** (`custom-<svc>-gateway-route`) and
+the **Gateway listener** (`<svc>-https` on `envoy-gateway/flex-gateway`, with a
+cert-manager-issued cert). The generated `manifests/gateway/patch-routes.sh`
+(step `gw.routes`) swaps the default `<svc>.<domain>` for the override on **both**
+(jq-based, preserving other hostnames); cert-manager (annotation-driven on the
+Gateway) then reissues the TLS cert for the new name. So DNS for the custom name
+must point at the gateway VIP for ACME HTTP01 to succeed. Re-run `overrides
+upload` after editing `hosts`. Route/listener names are genestack-specific —
+verify with `kubectl get httproute -A` and `kubectl -n envoy-gateway get gateway
+flex-gateway -o yaml`. Services without a genestack route (e.g. harbor) are
+warned and skipped.
 
 `ansible_host` = SSH/management address (e.g. WAN). `node_ip` = the private
 cluster IP kubespray binds k8s/etcd to (→ `ip`/`access_ip`). Editing
@@ -105,6 +116,18 @@ cluster IP kubespray binds k8s/etcd to (→ `ip`/`access_ip`). Editing
   **bridges it into OVS (br-int)** and the NIC loses L3. For a geneve overlay set
   only `IFACE`; leave `VLAN_INTERFACE_NAME` blank (genestack does provider nets
   via its own OVN). `ovn.config` already does this with anchored seds.
+- **group_vars override inventory.yaml**: genestack's seeded
+  `/etc/genestack/inventory/group_vars/` hardcode `kube_pods_subnet`
+  (10.236.0.0/14) etc., and Ansible loads `inventory/group_vars/*` at higher
+  precedence than the inline `vars:` in `inventory.yaml` — so the CLI's
+  inventory value is silently ignored. `config.groupvars` writes
+  `group_vars/k8s_cluster/zz-genestack-cli.yml` (alphabetically last ⇒ wins) to
+  pin the model's pod/service CIDRs. Anything that must beat genestack defaults
+  belongs in that override file, not just inventory.yaml.
+- **Deployer is also a cluster node**: `ansible all -m reboot` would reboot the
+  deployer itself and kill ansible / the control session (`new session: EOF`).
+  `host.reboot` excludes `{{DEPLOY_NODE}}`; reboot the deployer last via the
+  opt-in `host.reboot.self` (or manually), reconnect, then `run kubernetes`.
 - **Re-applying OVN annotations** needs deleting the `ovn.openstack.org/configured`
   **label** so the `ovn-setup` DaemonSet (ns `openstack`) re-runs; just changing
   the annotation isn't enough.

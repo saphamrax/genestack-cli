@@ -131,16 +131,26 @@ func TestCustomServiceHosts(t *testing.T) {
 		t.Fatal("patch-routes.sh not generated")
 	}
 	gws := string(gw.Content)
-	if !strings.Contains(gws, "patch httproute keystone") ||
-		!strings.Contains(gws, "keystone-user4.ftigenestack.site") {
-		t.Error("patch-routes.sh missing keystone route override")
+	// Real genestack route names: custom-<svc>-gateway-route in openstack ns,
+	// and the patch swaps the default <svc>.<domain> for the override.
+	if !strings.Contains(gws, `patch_route openstack custom-keystone-gateway-route "keystone.api.openstack.example.com" "keystone-user4.ftigenestack.site"`) {
+		t.Errorf("patch-routes.sh missing keystone route override:\n%s", gws)
 	}
-	if !strings.Contains(gws, "patch httproute skyline") ||
-		!strings.Contains(gws, "cloud-user4.ftigenestack.site") {
-		t.Error("patch-routes.sh missing skyline route override")
+	if !strings.Contains(gws, `patch_route openstack custom-skyline-gateway-route "skyline.api.openstack.example.com" "cloud-user4.ftigenestack.site"`) {
+		t.Errorf("patch-routes.sh missing skyline route override:\n%s", gws)
 	}
-	if strings.Contains(gws, "patch httproute nova") {
+	if strings.Contains(gws, "custom-nova-gateway-route") {
 		t.Error("patch-routes.sh should not touch un-overridden services")
+	}
+}
+
+func TestGatewayRouteUnknownServiceWarns(t *testing.T) {
+	c := testCluster()
+	c.Overrides.Endpoints.Hosts = map[string]string{"harbor": "harbor-user4.ftigenestack.site"}
+	gw, _ := find(Managed(c), "gateway/patch-routes.sh")
+	gws := string(gw.Content)
+	if !strings.Contains(gws, `no known gateway route for service "harbor"`) {
+		t.Errorf("expected a warning for harbor (no genestack route): %s", gws)
 	}
 }
 
@@ -149,7 +159,8 @@ func TestGatewayRoutesEmptyIsNoOp(t *testing.T) {
 	if !ok {
 		t.Fatal("patch-routes.sh not generated")
 	}
-	if strings.Contains(string(gw.Content), "patch httproute") {
+	// The helper function is always defined; a no-op script has no route calls.
+	if strings.Contains(string(gw.Content), "gateway-route") {
 		t.Errorf("expected a no-op script with no overrides, got:\n%s", gw.Content)
 	}
 }
