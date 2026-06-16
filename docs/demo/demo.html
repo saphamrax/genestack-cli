@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>genestack-cli demo</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.8.0/dist/bundle/asciinema-player.css">
+  <style>
+    body { margin: 0; background: #0c0c0c; color: #c7e5c3;
+           font-family: -apple-system, system-ui, sans-serif; }
+    header { padding: 1rem 1.25rem; }
+    header h1 { margin: 0; font-size: 1.1rem; }
+    header p { margin: .25rem 0 0; opacity: .7; font-size: .85rem; }
+    #player { width: 100%; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>genestack-cli — demo</h1>
+    <p>Deploying OpenStack via Genestack as resumable phases. Press space to play/pause.</p>
+  </header>
+  <div id="player"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.8.0/dist/bundle/asciinema-player.min.js"></script>
+  <script>
+    AsciinemaPlayer.create('demo.cast', document.getElementById('player'), {
+      autoPlay: false,
+      idleTimeLimit: 2,
+      fit: 'width',
+      terminalFontSize: 'small'
+    });
+  </script>
+</body>
+</html>

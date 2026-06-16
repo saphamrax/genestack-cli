@@ -22,5 +22,6 @@ logs/
 # editor
 .DS_Store
 
-# asciinema recordings (may capture live host data — keep out of the repo)
+# asciinema recordings (may capture live host data — keep raw ones out of the repo)
 *.cast
+!docs/demo/demo.cast
