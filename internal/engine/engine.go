@@ -281,9 +281,15 @@ func DefaultPhases() []Phase {
 			Steps: []Step{
 				{ID: "os.keystone", Title: "Install Keystone",
 					Cmd: "/opt/genestack/bin/install-keystone.sh && kubectl --namespace openstack apply -f /etc/genestack/manifests/utils/utils-openstack-client-admin.yaml"},
+				{ID: "os.storage", Title: "Apply storage backend manifests (if any)",
+					// Self-skipping: applies operator-provided backend secrets /
+					// ConfigMaps (e.g. Ceph keyrings, ceph-etc) dropped under
+					// overrides/manifests/storage/ before Glance/Cinder install. No-op
+					// when the dir is absent. Backend-agnostic.
+					Cmd: `[ -d /etc/genestack/manifests/storage ] && kubectl apply -f /etc/genestack/manifests/storage/ || echo "no storage manifests, skipping"`},
 				{ID: "os.glance", Title: "Install Glance",
 					Cmd: "/opt/genestack/bin/install-glance.sh"},
-				{ID: "os.cinder", Title: "Install Cinder API",
+				{ID: "os.cinder", Title: "Install Cinder API (+ configured backends)",
 					Cmd: "/opt/genestack/bin/install-cinder.sh"},
 				{ID: "os.placement", Title: "Install Placement",
 					Cmd: "/opt/genestack/bin/install-placement.sh"},

@@ -1,0 +1,71 @@
+# Example storage overrides for cluster.yaml.
+#
+# Copy the `cinder:` / `glance:` blocks under `overrides:` in your cluster.yaml.
+# These are rendered VERBATIM into:
+#   /etc/genestack/helm-configs/cinder/cinder-helm-overrides.yaml
+#   /etc/genestack/helm-configs/glance/glance-helm-overrides.yaml
+# which genestack's install-cinder.sh / install-glance.sh include as helm -f values.
+#
+# Any backend is just config here — add another block under conf.cinder.backends
+# (Ceph, NetApp, Pure, LVM, …) and list its name in DEFAULT.enabled_backends.
+# Secrets may sit inline (cluster.yaml is gitignored); the Ceph keyring/ceph.conf
+# go as a passthrough manifest (see ceph-secrets.yaml).
+
+overrides:
+
+  # ---- Glance: use Ceph RBD as the image store ----------------------------
+  glance:
+    storage: rbd
+    conf:
+      glance:
+        DEFAULT:
+          enabled_backends: "rbd:rbd"
+          show_image_direct_url: True
+        glance_store:
+          default_backend: rbd
+          rbd:
+            rbd_store_chunk_size: 8
+            rbd_store_pool: images
+            rbd_store_user: glance
+            rbd_store_ceph_conf: /etc/ceph/ceph.conf
+
+  # ---- Cinder: two backends at once (Ceph rbd-ceph + NetApp iSCSI) ---------
+  cinder:
+    storage: ceph
+    conf:
+      ceph:
+        enabled: true
+      cinder:
+        DEFAULT:
+          enabled_backends: rbd-ceph,netapp-iscsi-block1
+          default_volume_type: rbd-ceph                 # new volumes land on Ceph
+          backup_driver: cinder.backup.drivers.ceph.CephBackupDriver
+        backends:
+          rbd-ceph:
+            volume_driver: cinder.volume.drivers.rbd.RBDDriver
+            volume_backend_name: rbd-ceph
+            rbd_pool: volumes
+            rbd_ceph_conf: /etc/ceph/ceph.conf
+            rbd_secret_uuid: REPLACE-WITH-UUIDGEN        # same UUID as the libvirt secret
+            rbd_user: cinder
+            rbd_flatten_volume_from_snapshot: false
+            report_discard_supported: true
+          netapp-iscsi-block1:
+            volume_backend_name: netapp-iscsi
+            volume_driver: cinder.volume.drivers.netapp.common.NetAppDriver
+            netapp_login: REPLACE-VSERVER-ADMIN
+            netapp_password: REPLACE-VSERVER-PASSWORD    # secret
+            netapp_server_hostname: openstack-block1
+            netapp_server_port: 443
+            netapp_vserver: REPLACE-VSERVER-NAME
+            netapp_storage_family: ontap_cluster
+            netapp_storage_protocol: iscsi
+    secrets:
+      rbd:
+        backup: pvc-ceph-client-key
+        volume: pvc-ceph-client-key
+        volume_external: pvc-ceph-client-key
+    manifests:
+      deployment_volume: true        # REQUIRED — without this no cinder-volume pod is deployed
+      deployment_backup: true
+      job_backup_storage_init: false

@@ -297,23 +297,62 @@ genestack run openstack --optional
 
 ## 7. Storage backends
 
-Cinder needs a backend. Choose one and provide it as a **passthrough** override
-(the CLI does not template secrets):
+> Full guide with Ceph + NetApp end-to-end, `ceph.conf` ConfigMap, keyrings and
+> troubleshooting: **[STORAGE.md](STORAGE.md)** (examples in
+> [`examples/storage/`](examples/storage/)).
 
-- **Longhorn only** (default in the phases) — block storage via Longhorn; no extra
-  config needed.
-- **Ceph RBD (external)** — create `overrides/helm-configs/cinder/cinder-helm-overrides.yaml`,
-  `…/nova/nova-helm-overrides.yaml`, `…/glance/glance-helm-overrides.yaml`,
-  `…/libvirt/libvirt-helm-overrides.yaml` and the `manifests/ceph/*` ConfigMaps/secrets
-  per the manual's *Ceph RBD* section (FSID, monitors, keyrings, secret UUID).
-- **NetApp iSCSI** — create `overrides/helm-configs/cinder/cinder.yaml` with the
-  NetApp backend (login/password/server/vserver), then run the cinder-volume
-  playbook from the manual.
+Cinder needs a backend; Glance can also use Ceph for its image store.
 
-Upload them with the rest:
+`overrides.cinder` and `overrides.glance` are **free-form** — whatever YAML you put
+there is rendered verbatim into `helm-configs/{cinder,glance}/<svc>-helm-overrides.yaml`,
+which genestack's install scripts pick up. Storage backends (Ceph, NetApp, Pure, …)
+are therefore pure config: a new backend needs **no CLI changes**, you just add its
+block. Multiple Cinder backends run together via `enabled_backends`.
+
+```yaml
+overrides:
+  glance:                      # -> helm-configs/glance/glance-helm-overrides.yaml
+    storage: rbd
+    conf:
+      glance:
+        glance_store:
+          default_backend: rbd
+          rbd: {rbd_store_pool: images, rbd_store_user: glance, rbd_store_ceph_conf: /etc/ceph/ceph.conf}
+  cinder:                      # -> helm-configs/cinder/cinder-helm-overrides.yaml
+    storage: ceph
+    conf:
+      cinder:
+        DEFAULT:
+          enabled_backends: rbd-ceph,netapp-iscsi-block1
+          default_volume_type: rbd-ceph
+        backends:
+          rbd-ceph:
+            volume_driver: cinder.volume.drivers.rbd.RBDDriver
+            rbd_pool: volumes
+            rbd_secret_uuid: <uuidgen>
+          netapp-iscsi-block1:
+            volume_driver: cinder.volume.drivers.netapp.common.NetAppDriver
+            netapp_login: <vserver admin>
+            netapp_password: <vserver password>   # secret — cluster.yaml is gitignored
+            netapp_server_hostname: openstack-block1
+            netapp_vserver: <vserver name>
+```
+
+Backend **secrets/ConfigMaps** that aren't helm values (e.g. the Ceph `ceph-etc`
+ConfigMap and RBD keyring Secrets, per the manual's *Ceph RBD External Cluster*
+section) go as passthrough manifests under `overrides/manifests/storage/`. The
+`os.storage` step applies that directory (`kubectl apply -f`) before Glance/Cinder.
+Any backend-specific host prep (e.g. trusting a NetApp vserver cert) is a one-off
+operator step per the manual.
+
+> **Secrets:** keyrings / passwords live in `cluster.yaml` (or the passthrough
+> manifests), which are gitignored — keep them out of source control.
+
+Upload + apply:
 
 ```bash
 genestack overrides upload
+genestack run os.storage os.glance os.cinder --force
 ```
 
 ---

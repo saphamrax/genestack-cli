@@ -225,11 +225,20 @@ type PrometheusOverride struct {
 // files. Domain-derived files (endpoints, probe targets, grafana, barbican) use
 // Cluster.Domain/Region directly. Anything not modelled here can be supplied as
 // a passthrough file under the local overrides/ directory.
+//
+// Cinder and Glance are intentionally NOT typed: storage backends (Ceph, NetApp,
+// Pure, …) vary too much. They are free-form YAML rendered verbatim into the
+// helm-override files, so a new backend is pure config (no code). Backend secrets
+// either sit inline here (cluster.yaml is gitignored) or as passthrough
+// manifests under overrides/manifests/storage/ (applied by the os.storage step).
 type Overrides struct {
 	Endpoints  EndpointsOverride  `yaml:"endpoints"`
 	Neutron    NeutronOverride    `yaml:"neutron"`
 	Nova       NovaOverride       `yaml:"nova"`
 	Prometheus PrometheusOverride `yaml:"prometheus"`
+	// Free-form helm-override bodies rendered to helm-configs/<svc>/<svc>-helm-overrides.yaml.
+	Cinder yaml.Node `yaml:"cinder,omitempty"`
+	Glance yaml.Node `yaml:"glance,omitempty"`
 }
 
 // DefaultOverrides returns the recommended values from the manual.

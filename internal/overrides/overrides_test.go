@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/rackerlabs/genestack-cli/internal/model"
 )
 
@@ -162,6 +164,54 @@ func TestGatewayRoutesEmptyIsNoOp(t *testing.T) {
 	// The helper function is always defined; a no-op script has no route calls.
 	if strings.Contains(string(gw.Content), "gateway-route") {
 		t.Errorf("expected a no-op script with no overrides, got:\n%s", gw.Content)
+	}
+}
+
+func TestStorageDisabledEmitsNothing(t *testing.T) {
+	files := Managed(testCluster()) // overrides.cinder/glance unset by default
+	for _, suffix := range []string{"cinder/cinder-helm-overrides.yaml", "glance/glance-helm-overrides.yaml"} {
+		if _, ok := find(files, suffix); ok {
+			t.Errorf("did not expect %s when cinder/glance overrides are unset", suffix)
+		}
+	}
+}
+
+func TestRawCinderGlanceOverrides(t *testing.T) {
+	c := testCluster()
+	// Free-form bodies (any backend — Ceph + NetApp here) rendered verbatim.
+	if err := yaml.Unmarshal([]byte(`
+conf:
+  cinder:
+    DEFAULT:
+      enabled_backends: rbd-ceph,netapp-iscsi
+      default_volume_type: rbd-ceph
+    backends:
+      rbd-ceph:
+        volume_driver: cinder.volume.drivers.rbd.RBDDriver
+      netapp-iscsi:
+        volume_driver: cinder.volume.drivers.netapp.common.NetAppDriver
+        netapp_password: 's3cret'
+`), &c.Overrides.Cinder); err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal([]byte("storage: rbd\nconf:\n  glance:\n    glance_store:\n      default_backend: rbd\n"), &c.Overrides.Glance); err != nil {
+		t.Fatal(err)
+	}
+	files := Managed(c)
+
+	cin, ok := find(files, "cinder/cinder-helm-overrides.yaml")
+	if !ok {
+		t.Fatal("cinder override not generated")
+	}
+	cs := string(cin.Content)
+	for _, want := range []string{"enabled_backends: rbd-ceph,netapp-iscsi", "default_volume_type: rbd-ceph", "RBDDriver", "NetAppDriver", "netapp_password: 's3cret'"} {
+		if !strings.Contains(cs, want) {
+			t.Errorf("cinder override missing %q\n%s", want, cs)
+		}
+	}
+	gl, ok := find(files, "glance/glance-helm-overrides.yaml")
+	if !ok || !strings.Contains(string(gl.Content), "default_backend: rbd") {
+		t.Error("glance override not rendered")
 	}
 }
 

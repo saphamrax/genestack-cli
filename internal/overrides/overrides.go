@@ -13,6 +13,8 @@ import (
 	"sort"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/rackerlabs/genestack-cli/internal/model"
 )
 
@@ -42,7 +44,7 @@ func (f File) Rel() string {
 
 // Managed returns the files the CLI generates from the cluster model.
 func Managed(c *model.Cluster) []File {
-	return []File{
+	files := []File{
 		endpoints(c),
 		probeTargets(c),
 		grafana(c),
@@ -53,6 +55,15 @@ func Managed(c *model.Cluster) []File {
 		prometheus(c),
 		metallb(c),
 	}
+	// Storage is free-form: render overrides.cinder / overrides.glance verbatim
+	// when set. Backend-agnostic — Ceph, NetApp, Pure, … are all just config.
+	if f, ok := rawHelmConfig("cinder", c.Overrides.Cinder); ok {
+		files = append(files, f)
+	}
+	if f, ok := rawHelmConfig("glance", c.Overrides.Glance); ok {
+		files = append(files, f)
+	}
+	return files
 }
 
 func path(rel string) string { return RemoteBase + "/" + rel }
@@ -303,6 +314,21 @@ conf:
   enable_iscsi: %t
 `, c.Overrides.Nova.Multipath, c.Overrides.Nova.EnableISCSI)
 	return File{Path: path("helm-configs/nova/nova-helm-overrides.yaml"), Content: []byte(content), Source: Generated}
+}
+
+// rawHelmConfig renders a free-form override body (overrides.cinder / .glance)
+// verbatim into helm-configs/<svc>/<svc>-helm-overrides.yaml. ok is false when
+// the node is empty (the operator did not set it).
+func rawHelmConfig(svc string, node yaml.Node) (File, bool) {
+	if node.Kind == 0 {
+		return File{}, false
+	}
+	body, err := yaml.Marshal(&node)
+	if err != nil {
+		return File{}, false
+	}
+	content := "---\n" + string(body)
+	return File{Path: path("helm-configs/" + svc + "/" + svc + "-helm-overrides.yaml"), Content: []byte(content), Source: Generated}, true
 }
 
 func prometheus(c *model.Cluster) File {
