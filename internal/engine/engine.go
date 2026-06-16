@@ -285,8 +285,9 @@ func DefaultPhases() []Phase {
 					// Self-skipping: applies operator-provided backend secrets /
 					// ConfigMaps (e.g. Ceph keyrings, ceph-etc) dropped under
 					// overrides/manifests/storage/ before Glance/Cinder install. No-op
-					// when the dir is absent. Backend-agnostic.
-					Cmd: `[ -d /etc/genestack/manifests/storage ] && kubectl apply -f /etc/genestack/manifests/storage/ || echo "no storage manifests, skipping"`},
+					// when the dir is absent. Uses if/then/else so a real apply failure
+					// fails the step (a trailing `|| echo` would mask it).
+					Cmd: `if [ -d /etc/genestack/manifests/storage ]; then kubectl apply -f /etc/genestack/manifests/storage/; else echo "no storage manifests, skipping"; fi`},
 				{ID: "os.glance", Title: "Install Glance",
 					Cmd: "/opt/genestack/bin/install-glance.sh"},
 				{ID: "os.cinder", Title: "Install Cinder API (+ configured backends)",

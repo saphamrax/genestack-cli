@@ -215,6 +215,43 @@ conf:
 	}
 }
 
+func TestLibvirtAndManifests(t *testing.T) {
+	c := testCluster()
+	if err := yaml.Unmarshal([]byte("conf:\n  ceph:\n    enabled: true\n    cinder:\n      secret_uuid: u-1\n"), &c.Overrides.Libvirt); err != nil {
+		t.Fatal(err)
+	}
+	if err := yaml.Unmarshal([]byte(`
+- {apiVersion: v1, kind: ConfigMap, metadata: {name: ceph-etc, namespace: openstack}}
+- {apiVersion: v1, kind: Secret, metadata: {name: images-rbd-keyring, namespace: openstack}}
+`), &c.Overrides.Manifests); err != nil {
+		t.Fatal(err)
+	}
+	files := Managed(c)
+
+	lv, ok := find(files, "libvirt/libvirt-helm-overrides.yaml")
+	if !ok || !strings.Contains(string(lv.Content), "secret_uuid: u-1") {
+		t.Error("libvirt override not rendered")
+	}
+	m, ok := find(files, "manifests/storage/cluster-manifests.yaml")
+	if !ok {
+		t.Fatal("cluster-manifests not rendered")
+	}
+	ms := string(m.Content)
+	// two docs, separated by ---
+	if strings.Count(ms, "---") < 2 || !strings.Contains(ms, "name: ceph-etc") || !strings.Contains(ms, "name: images-rbd-keyring") {
+		t.Errorf("manifests not rendered as multi-doc:\n%s", ms)
+	}
+}
+
+func TestLibvirtAndManifestsUnsetEmitsNothing(t *testing.T) {
+	files := Managed(testCluster())
+	for _, s := range []string{"libvirt/libvirt-helm-overrides.yaml", "manifests/storage/cluster-manifests.yaml"} {
+		if _, ok := find(files, s); ok {
+			t.Errorf("did not expect %s when unset", s)
+		}
+	}
+}
+
 func mustWrite(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

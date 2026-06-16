@@ -63,6 +63,12 @@ func Managed(c *model.Cluster) []File {
 	if f, ok := rawHelmConfig("glance", c.Overrides.Glance); ok {
 		files = append(files, f)
 	}
+	if f, ok := rawHelmConfig("libvirt", c.Overrides.Libvirt); ok {
+		files = append(files, f)
+	}
+	if f, ok := clusterManifests(c.Overrides.Manifests); ok {
+		files = append(files, f)
+	}
 	return files
 }
 
@@ -329,6 +335,25 @@ func rawHelmConfig(svc string, node yaml.Node) (File, bool) {
 	}
 	content := "---\n" + string(body)
 	return File{Path: path("helm-configs/" + svc + "/" + svc + "-helm-overrides.yaml"), Content: []byte(content), Source: Generated}, true
+}
+
+// clusterManifests renders overrides.manifests (a list of raw k8s objects) into a
+// single multi-doc file under manifests/storage/, applied by the os.storage step.
+// ok is false when the list is empty.
+func clusterManifests(nodes []yaml.Node) (File, bool) {
+	if len(nodes) == 0 {
+		return File{}, false
+	}
+	var b strings.Builder
+	for i := range nodes {
+		body, err := yaml.Marshal(&nodes[i])
+		if err != nil {
+			return File{}, false
+		}
+		b.WriteString("---\n")
+		b.Write(body)
+	}
+	return File{Path: path("manifests/storage/cluster-manifests.yaml"), Content: []byte(b.String()), Source: Generated}, true
 }
 
 func prometheus(c *model.Cluster) File {

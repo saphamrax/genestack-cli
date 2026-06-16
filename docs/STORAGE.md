@@ -49,21 +49,22 @@ overrides:
 
 ## Ceph (external) — Glance image store + Cinder `rbd-ceph`
 
-### 1. Collect from the Ceph cluster (use the **br-storage** monitor IPs)
+### 1. Create pools + keys on the Ceph cluster (use the **br-storage** monitor IPs)
+
+Use the helper [`examples/storage/ceph-create-pools.sh`](examples/storage/ceph-create-pools.sh).
+It creates `<prefix>images`, `<prefix>volumes`, `<prefix>vms` pools and the
+matching `client.<prefix>glance` / `client.<prefix>cinder` keys (scoped to those
+pools), then prints the `fsid`, a `secret_uuid`, and the raw + base64 keyrings —
+ready to paste into `cluster.yaml` and `ceph-secrets.yaml`.
 
 ```bash
-declare -a MON=( 172.20.250.51 172.20.250.52 172.20.250.53 )
-ssh ${MON[0]} cephadm shell -- bash -c 'for p in images volumes vms; do ceph osd pool create $p; rbd pool init $p; done'
-FSID=$(ssh ${MON[0]} cephadm shell -- ceph fsid)
-UUID=$(uuidgen)                                            # shared rbd_secret_uuid
-GLANCE_KEY=$(ssh ${MON[0]} cephadm shell -- ceph auth get-or-create-key client.glance \
-  mon 'profile rbd' osd 'allow class-read object_prefix rbd_children, profile rbd pool=images' mgr 'profile rbd pool=images')
-CINDER_KEY=$(ssh ${MON[0]} cephadm shell -- ceph auth get-or-create-key client.cinder \
-  mon 'profile rbd' osd 'profile rbd pool=volumes, profile rbd pool=vms, profile rbd-read-only pool=images' \
-  mgr 'profile rbd pool=volumes, profile rbd pool=vms')
-echo "cinder b64: $(echo -n "$CINDER_KEY" | base64)"
-echo "glance b64: $(echo -n "$GLANCE_KEY" | base64)"
+# run on a Ceph node (or pipe into cephadm shell). Prefix is verbatim — include
+# any separator. Empty prefix -> images/volumes/vms.
+ssh <mon> cephadm shell -- bash -s -- user7-  < docs/examples/storage/ceph-create-pools.sh
 ```
+
+Take `images=<prefix>images`, `volumes=<prefix>volumes`, `vms=<prefix>vms`, the two
+keyrings (base64) and the `fsid`/`secret_uuid` from its output into the steps below.
 
 ### 2. Cinder/Glance overrides
 

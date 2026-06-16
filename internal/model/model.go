@@ -237,8 +237,14 @@ type Overrides struct {
 	Nova       NovaOverride       `yaml:"nova"`
 	Prometheus PrometheusOverride `yaml:"prometheus"`
 	// Free-form helm-override bodies rendered to helm-configs/<svc>/<svc>-helm-overrides.yaml.
-	Cinder yaml.Node `yaml:"cinder,omitempty"`
-	Glance yaml.Node `yaml:"glance,omitempty"`
+	Cinder  yaml.Node `yaml:"cinder,omitempty"`
+	Glance  yaml.Node `yaml:"glance,omitempty"`
+	Libvirt yaml.Node `yaml:"libvirt,omitempty"` // e.g. the external-Ceph libvirt secret
+	// Manifests is a list of raw Kubernetes objects (ConfigMaps/Secrets, e.g. the
+	// Ceph ceph-etc ConfigMap + RBD keyring Secrets) rendered into a single file
+	// under manifests/storage/ and applied by the os.storage step — so backend
+	// wiring can live in cluster.yaml without a separate passthrough folder.
+	Manifests []yaml.Node `yaml:"manifests,omitempty"`
 }
 
 // DefaultOverrides returns the recommended values from the manual.
