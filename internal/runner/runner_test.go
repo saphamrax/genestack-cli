@@ -104,3 +104,34 @@ func TestDeployNodeMatchesByName(t *testing.T) {
 		t.Errorf("expected match by name, got %q", dn)
 	}
 }
+
+func TestExpandScaleHosts(t *testing.T) {
+	c := rebootCluster()
+	r := &Runner{Cluster: c, ScaleHosts: []string{"cmp07", "cmp08"}}
+
+	// {{SCALE_LIMIT}} is comma-joined for ansible --limit.
+	got := r.Expand(`ansible-playbook scale.yml --limit '{{SCALE_LIMIT}}'`)
+	if !strings.Contains(got, `--limit 'cmp07,cmp08'`) {
+		t.Errorf("expected comma-joined limit, got %q", got)
+	}
+	// {{SCALE_NODES}} is space-joined for kubectl node args.
+	got = r.Expand(`kubectl label node {{SCALE_NODES}} x=y`)
+	if !strings.Contains(got, `node cmp07 cmp08 x=y`) {
+		t.Errorf("expected space-joined nodes, got %q", got)
+	}
+}
+
+func TestScaleStepsUseScaleYml(t *testing.T) {
+	var k8s string
+	for _, s := range engine.ScaleSteps() {
+		if s.ID == "scale.k8s" {
+			k8s = s.Cmd
+		}
+	}
+	if k8s == "" {
+		t.Fatal("scale.k8s step not found")
+	}
+	if !strings.Contains(k8s, "scale.yml") || strings.Contains(k8s, "cluster.yml") {
+		t.Errorf("scale.k8s must run kubespray scale.yml (not cluster.yml), got %q", k8s)
+	}
+}

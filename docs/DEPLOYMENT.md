@@ -23,8 +23,9 @@ generated inventory + override files, and a resumable phase runner.
 8. [Post-install](#8-post-install)
 9. [Resuming, re-running, troubleshooting](#9-resuming-re-running-troubleshooting)
 10. [Command reference](#10-command-reference)
-11. [cluster.yaml reference](#11-clusteryaml-reference)
-12. [Known limitations](#12-known-limitations)
+11. [Scaling — add compute nodes](#11-scaling--add-compute-nodes)
+12. [cluster.yaml reference](#12-clusteryaml-reference)
+13. [Known limitations](#13-known-limitations)
 
 ---
 
@@ -433,12 +434,82 @@ Deploy:
   reset TARGET... [--all --from P --to P]
   tui                                    launch the terminal UI
 
+Scale (add compute nodes to a running cluster — see §11):
+  scale add NAME --ip IP [--node-ip IP] [--roles compute]
+  scale apply NAME... [--dry-run --optional --skip-os-update --from STEP --no-log]
+
 TARGET = phase id (e.g. kubernetes) or step id (e.g. k8s.cluster).
 ```
 
 ---
 
-## 11. cluster.yaml reference
+## 11. Scaling — add compute nodes
+
+Adds new **compute (worker)** nodes to an already-deployed cluster, automating the
+add-node runbook. Control-plane (controller) nodes are **not** supported here — they
+need the full deploy flow.
+
+**1. Register the node(s)** in `cluster.yaml` (config edit only):
+
+```bash
+genestack scale add cmp07 --ip 10.245.0.87 --node-ip 10.245.0.87
+genestack scale add cmp08 --ip 10.245.0.88 --node-ip 10.245.0.88
+```
+
+`scale add` is like `node add` but `--roles` defaults to `compute` and rejects
+`controller`. `--ip` is the SSH/management address; `--node-ip` is the private
+cluster IP kubespray binds to.
+
+**2. Onboard them** (long-running, over SSH to the deployment host):
+
+```bash
+genestack scale apply cmp07 cmp08 --dry-run   # preview the exact commands first
+genestack scale apply cmp07 cmp08
+```
+
+`scale apply` runs, limited to the named hosts:
+
+| Step | What |
+|------|------|
+| `scale.inventory` | regenerate + upload `inventory.yaml` (now includes the new nodes) |
+| `scale.upgrade` | `apt update && upgrade` on the new hosts |
+| `scale.reboot` | reboot the new hosts (never the deployer) |
+| `scale.k8s` | join them as workers with kubespray **`scale.yml --limit`** (not `cluster.yml`) |
+| `scale.hostsetup` | genestack `host-setup.yml` on the new hosts |
+| `scale.opsconfig` | *(optional)* openstack-ops host config — needs `--optional` |
+| `scale.label` | label only the new nodes `openstack-compute-node` / `openstack-network-node` |
+| `scale.ovn` | annotate only the new nodes with `ovn.openstack.org/*` (from `cluster.yaml`'s `ovn:`) |
+| `scale.verify` | `openstack compute service list` / `network agent list` |
+
+nova/neutron pick up the new agents automatically once the nodes are labeled and
+annotated. The steps are idempotent and **not** tracked in `.state.json`, so
+`scale apply` can be re-run safely (each call re-runs every step against its hosts).
+
+Flags for `scale apply`:
+
+```
+--dry-run         print the commands without running them
+--optional        include scale.opsconfig (openstack-ops host config)
+--skip-os-update  skip scale.upgrade + scale.reboot (e.g. freshly-imaged nodes)
+--from STEP       resume at a scale step id (e.g. scale.k8s) after fixing a failure
+--no-log          do not write run logs
+```
+
+On failure the run stops at that step; fix the cause on the host and resume with
+`--from <step>`. Verify afterwards:
+
+```bash
+kubectl get nodes                 # new nodes Ready
+kubectl --namespace openstack exec openstack-admin-client -- openstack compute service list
+```
+
+> The new nodes get the **same** OVN bridges/ports/mappings as the `ovn:` block in
+> `cluster.yaml`. If a node needs a different provider-NIC mapping, adjust the
+> annotation on that node manually after `scale apply`.
+
+---
+
+## 12. cluster.yaml reference
 
 ```yaml
 name: string
@@ -491,7 +562,7 @@ Defaults are filled in for omitted fields, so a minimal config still renders.
 
 ---
 
-## 12. Known limitations
+## 13. Known limitations
 
 - **Not yet run e2e on production hardware via this tool.** The phases mirror the
   manual, but the OpenStack service phases (10–12) should be driven with care and

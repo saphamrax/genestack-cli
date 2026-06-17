@@ -67,6 +67,8 @@ func main() {
 		err = cmdInit(*cfgPath)
 	case "node":
 		err = cmdNode(*cfgPath, args)
+	case "scale":
+		err = cmdScale(*cfgPath, args)
 	case "inventory", "inv":
 		err = cmdInventory(*cfgPath, args)
 	case "validate", "check":

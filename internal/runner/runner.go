@@ -23,6 +23,10 @@ type Runner struct {
 	Exec         exec.Executor
 	Cluster      *model.Cluster
 	OverridesDir string // local passthrough directory for override files
+	// ScaleHosts is the set of node names targeted by a `scale apply` run. It
+	// drives the {{SCALE_LIMIT}}/{{SCALE_NODES}} placeholders so onboarding
+	// steps act only on the new nodes; empty for normal deploy runs.
+	ScaleHosts []string
 }
 
 // Expand substitutes cluster-specific placeholders in a command.
@@ -48,6 +52,10 @@ func (r *Runner) Expand(cmd string) string {
 		// cluster node (else ""). Used to keep ansible from rebooting the host
 		// it is running on, which would kill the control session.
 		"{{DEPLOY_NODE}}", deployNodeName(c),
+		// Nodes targeted by `scale apply`: comma-joined for ansible --limit,
+		// space-joined for `kubectl ... node a b c`.
+		"{{SCALE_LIMIT}}", strings.Join(r.ScaleHosts, ","),
+		"{{SCALE_NODES}}", strings.Join(r.ScaleHosts, " "),
 	)
 	return repl.Replace(cmd)
 }

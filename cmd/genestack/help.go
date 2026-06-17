@@ -42,6 +42,7 @@ DEPLOY COMMANDS
   status                summarise run progress
   run TARGET...         run phases/steps on the deployment host
   reset TARGET...       clear run state so steps run again
+  scale                 add / onboard compute nodes into a running cluster
   tui                   launch the terminal UI (default when no command)
 
 TARGETS (for run / reset)
@@ -120,6 +121,42 @@ EXAMPLES
   genestack node add stor1 --ip 10.0.0.60 --roles network,storage
   genestack node list
   genestack node rm cmp01
+`,
+
+	"scale": `genestack scale — add compute nodes to a running cluster
+
+USAGE
+  genestack scale add NAME --ip IP [--node-ip IP] [--roles compute]
+  genestack scale apply NAME [NAME...] [flags]
+
+DESCRIPTION
+  Onboards new worker nodes into an already-deployed cluster, automating the
+  add-node runbook. Control-plane (controller) nodes are NOT supported — use the
+  normal deploy flow for those.
+
+  add    register a node in cluster.yaml (like 'node add', but --roles defaults
+         to compute and controller is rejected). Edits config only.
+  apply  run the onboarding pipeline against the named nodes (which must already
+         exist in cluster.yaml): regenerate + upload inventory, OS upgrade +
+         reboot the new hosts, join them with kubespray scale.yml, run
+         host-setup, then label and OVN-annotate ONLY the new nodes so
+         nova/neutron pick up their agents. Steps run statelessly and are
+         idempotent, so 'apply' can be re-run safely.
+
+FLAGS (apply)
+  --dry-run         print the exact commands without running them
+  --optional        include optional steps (openstack-ops host config)
+  --skip-os-update  skip the OS package upgrade and reboot of the new nodes
+  --from STEP       resume at this scale step id (e.g. scale.k8s) after a fix
+  --log-dir DIR     where to write run logs (default: <config dir>/logs)
+  --no-log          do not write run logs to disk
+
+EXAMPLES
+  genestack scale add cmp07 --ip 10.245.0.87 --node-ip 10.245.0.87
+  genestack scale add cmp08 --ip 10.245.0.88 --node-ip 10.245.0.88
+  genestack scale apply cmp07 cmp08 --dry-run
+  genestack scale apply cmp07 cmp08
+  genestack scale apply cmp07 --from scale.k8s   # resume after a fixed failure
 `,
 
 	"inventory": `genestack inventory — generate the Ansible/kubespray inventory

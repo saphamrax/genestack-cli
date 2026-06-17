@@ -95,6 +95,19 @@ genestack connect              test SSH to the deployment host
 genestack tui                  launch the terminal UI (default)
 ```
 
+Scaling (add compute nodes to a **running** cluster):
+
+```
+genestack scale add NAME --ip IP [--node-ip IP] [--roles compute]   register in cluster.yaml
+genestack scale apply NAME [NAME...]                                onboard those nodes
+```
+
+`scale apply` re-uploads the inventory, joins the new hosts with kubespray
+`scale.yml` (limited to them), runs host-setup, then labels and OVN-annotates only
+the new nodes so nova/neutron pick up their agents. Worker nodes only (controller
+scaling is unsupported). Flags: `--dry-run`, `--optional`, `--skip-os-update`,
+`--from STEP` (resume), `--no-log`.
+
 `--config <path>` or `$GENESTACK_CONFIG` selects the config file.
 
 ### Override files (domains & service parameters)

@@ -53,6 +53,15 @@ longhorn → monitoring → gateway → infra → ovn-config → openstack → p
 Run them with `genestack run <phase|step> [flags]`. State persists, so re-runs
 skip done steps. `genestack phases` / `genestack steps [phase]` show status.
 
+**Scaling** (adding compute nodes to a *running* cluster) is a separate,
+stateless pipeline — `engine.ScaleSteps()`, not part of `DefaultPhases()` — driven
+by `genestack scale add` / `scale apply` (`cmd/genestack/scale.go`). It mirrors
+`docs/add_node.md`: re-upload inventory, OS upgrade + reboot the new hosts,
+kubespray **`scale.yml --limit`** (not `cluster.yml`), `host-setup.yml`, then label
+and OVN-annotate **only** the new nodes (by name, via `{{SCALE_NODES}}`). Worker
+roles only — controller scaling is rejected. Steps are idempotent and not tracked
+in `.state.json`, so each scale event re-runs all steps against its own host set.
+
 ## Placeholders (expanded by `runner.Expand`)
 
 `{{REGION}}` `{{DOMAIN}}` `{{GENESTACK_VERSION}}` `{{OVN_INT_BRIDGE}}` `{{OVN_BRIDGES}}` `{{OVN_PORTS}}`
@@ -62,6 +71,9 @@ skip done steps. `genestack phases` / `genestack steps [phase]` show status.
 in step `Cmd`s instead of hardcoding site values or fragile `awk` node-name
 matching. `{{DEPLOY_NODE}}` is the deployer's own inventory name when the
 deployment host is also a cluster node (else ""); see the reboot gotcha below.
+`{{SCALE_LIMIT}}` (comma-joined, for ansible `--limit`) and `{{SCALE_NODES}}`
+(space-joined, for `kubectl … node a b c`) come from `Runner.ScaleHosts`, set only
+during a `scale apply` run — empty on normal deploy runs.
 
 ## cluster.yaml (model) — key fields
 

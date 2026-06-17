@@ -320,6 +320,39 @@ func DefaultPhases() []Phase {
 	}
 }
 
+// ScaleSteps returns the ordered onboarding pipeline used by `scale apply` to add
+// already-registered worker nodes to a running cluster. Unlike DefaultPhases it is
+// not part of the deploy pipeline and is run statelessly (each scale event runs all
+// steps against its own host set), so the commands are limited to the new hosts via
+// the {{SCALE_LIMIT}} (ansible --limit) / {{SCALE_NODES}} (kubectl) placeholders and
+// are idempotent. It mirrors docs/add_node.md: regenerate inventory, update + reboot
+// the new hosts, join them with kubespray scale.yml (NOT cluster.yml), run
+// host-setup, then label and OVN-annotate only the new nodes so nova/neutron pick up
+// their agents.
+func ScaleSteps() []Step {
+	const rc = "source /opt/genestack/scripts/genestack.rc"
+	return []Step{
+		{ID: "scale.inventory", Title: "Regenerate & upload inventory (with new nodes)",
+			Action: ActionUploadInventory},
+		{ID: "scale.upgrade", Title: "Update OS packages on new nodes",
+			Cmd: rc + " && ansible openstack_compute_nodes -b -m ansible.builtin.apt -a 'update_cache=true upgrade=dist' --limit '{{SCALE_LIMIT}}'"},
+		{ID: "scale.reboot", Title: "Reboot new nodes",
+			Cmd: rc + " && ansible openstack_compute_nodes -b -m reboot --limit '{{SCALE_LIMIT}}'"},
+		{ID: "scale.k8s", Title: "Join nodes with kubespray (scale.yml)",
+			Cmd: rc + " && cd /opt/genestack/submodules/kubespray && ansible-playbook scale.yml -b --limit '{{SCALE_LIMIT}}'"},
+		{ID: "scale.hostsetup", Title: "Run host-setup.yml on new nodes",
+			Cmd: rc + " && cd /opt/genestack/ansible/playbooks && ansible-playbook -b host-setup.yml --limit '{{SCALE_LIMIT}}'"},
+		{ID: "scale.opsconfig", Title: "Configure hosts (openstack-ops)",
+			Cmd: "if [ -d /opt/openstack-ops/playbooks ]; then cd /opt/openstack-ops/playbooks && /root/.venvs/openstack-ops/bin/ansible-playbook -b configure-hosts.yml configure-packagemanager.yml --limit 'localhost:{{SCALE_LIMIT}}'; else echo 'openstack-ops not present, skipping'; fi", Optional: true},
+		{ID: "scale.label", Title: "Label new nodes as compute & network",
+			Cmd: "kubectl label node {{SCALE_NODES}} openstack-compute-node=enabled openstack-network-node=enabled --overwrite"},
+		{ID: "scale.ovn", Title: "Annotate new nodes for OVN",
+			Cmd: "kubectl annotate nodes {{SCALE_NODES}} ovn.openstack.org/int_bridge='{{OVN_INT_BRIDGE}}' ovn.openstack.org/bridges='{{OVN_BRIDGES}}' ovn.openstack.org/ports='{{OVN_PORTS}}' ovn.openstack.org/mappings='{{OVN_MAPPINGS}}' ovn.openstack.org/availability_zones='{{OVN_AZ}}' ovn.openstack.org/gateway='enabled' --overwrite"},
+		{ID: "scale.verify", Title: "Verify nova/neutron agents",
+			Cmd: "kubectl --namespace openstack exec openstack-admin-client -- bash -c 'openstack compute service list; openstack network agent list'"},
+	}
+}
+
 // State persists per-step status to a JSON file so runs can be resumed.
 type State struct {
 	path    string
