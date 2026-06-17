@@ -39,33 +39,34 @@ overrides:
         DEFAULT:
           enabled_backends: rbd-ceph,netapp-iscsi-block1
           default_volume_type: rbd-ceph                 # new volumes land on Ceph
-          backup_driver: cinder.backup.drivers.ceph.CephBackupDriver
-        backends:
-          rbd-ceph:
-            volume_driver: cinder.volume.drivers.rbd.RBDDriver
-            volume_backend_name: rbd-ceph
-            rbd_pool: volumes
-            rbd_ceph_conf: /etc/ceph/ceph.conf
-            rbd_secret_uuid: REPLACE-WITH-UUIDGEN        # same UUID as the libvirt secret
-            rbd_user: cinder
-            rbd_flatten_volume_from_snapshot: false
-            report_discard_supported: true
-          netapp-iscsi-block1:
-            volume_backend_name: netapp-iscsi
-            volume_driver: cinder.volume.drivers.netapp.common.NetAppDriver
-            netapp_login: REPLACE-VSERVER-ADMIN
-            netapp_password: REPLACE-VSERVER-PASSWORD    # secret
-            netapp_server_hostname: openstack-block1
-            netapp_server_port: 443
-            netapp_vserver: REPLACE-VSERVER-NAME
-            netapp_storage_family: ontap_cluster
-            netapp_storage_protocol: iscsi
+      # backends is a SIBLING of `cinder` under `conf` (renders backends.conf).
+      # Nesting it under conf.cinder leaves backends.conf empty -> mounted as a dir.
+      backends:
+        rbd-ceph:
+          volume_driver: cinder.volume.drivers.rbd.RBDDriver
+          volume_backend_name: rbd-ceph
+          rbd_pool: volumes
+          rbd_ceph_conf: /etc/ceph/ceph.conf
+          rbd_secret_uuid: REPLACE-WITH-UUIDGEN          # same UUID as the libvirt secret
+          rbd_user: cinder
+          rbd_flatten_volume_from_snapshot: false
+          report_discard_supported: true
+        netapp-iscsi-block1:
+          volume_backend_name: netapp-iscsi
+          volume_driver: cinder.volume.drivers.netapp.common.NetAppDriver
+          netapp_login: REPLACE-VSERVER-ADMIN
+          netapp_password: REPLACE-VSERVER-PASSWORD      # secret
+          netapp_server_hostname: openstack-block1
+          netapp_server_port: 443
+          netapp_vserver: REPLACE-VSERVER-NAME
+          netapp_storage_family: ontap_cluster
+          netapp_storage_protocol: iscsi
     secrets:
       rbd:
-        backup: pvc-ceph-client-key
         volume: pvc-ceph-client-key
         volume_external: pvc-ceph-client-key
     manifests:
       deployment_volume: true        # REQUIRED — without this no cinder-volume pod is deployed
-      deployment_backup: true
+      deployment_backup: false       # cinder-backup's external-ceph keyring volume is
+                                     # broken in this chart version; enable only if needed
       job_backup_storage_init: false
