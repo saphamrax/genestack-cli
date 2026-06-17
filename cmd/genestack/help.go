@@ -385,6 +385,7 @@ DESCRIPTION
     g          generate & upload the inventory
     o          generate & upload the override files
     a / d      add / delete a node
+    s          onboard the focused node into a running cluster (scale)
     pgup/pgdn  scroll logs
     q          quit
 

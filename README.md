@@ -73,6 +73,7 @@ $EDITOR cluster.yaml                              # set deployment.host, region,
 | `c` | connect SSH to the deployment host |
 | `g` | generate **and upload** inventory to `/etc/genestack/inventory/inventory.yaml` |
 | `a` / `d` | add / delete a node |
+| `s` | onboard the focused node into a running cluster (scale) |
 | `enter` | run the selected phase |
 | `R` | run all phases from the selected one onward (resumes, skips done) |
 | `pgup/pgdown` | scroll logs |

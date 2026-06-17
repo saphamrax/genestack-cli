@@ -37,6 +37,27 @@ func TestViewRendersAfterResize(t *testing.T) {
 	_ = model.View()
 }
 
+func TestScaleKeyRejectsController(t *testing.T) {
+	c := model.NewCluster("lab")
+	c.Nodes = []model.Node{
+		{Name: "ctl01", AnsibleHost: "10.0.0.51", Roles: []model.Role{model.RoleController}},
+		{Name: "cmp01", AnsibleHost: "10.0.0.54", Roles: []model.Role{model.RoleCompute}},
+	}
+	m := New(c, "cluster.yaml", "")
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	// Focus the controller node and press 's' — it must be rejected, not started.
+	m.focus = focusNodes
+	m.nodeIdx = 0
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	if m.running {
+		t.Fatal("scale should not start for a controller node")
+	}
+	if !strings.Contains(m.status, "controller") {
+		t.Errorf("expected a controller-unsupported status, got %q", m.status)
+	}
+}
+
 func TestExpandPlaceholders(t *testing.T) {
 	c := model.NewCluster("lab")
 	c.Region = "RegionTwo"

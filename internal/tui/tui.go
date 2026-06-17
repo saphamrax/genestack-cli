@@ -243,6 +243,76 @@ func (m *Model) runSequence(phases []engine.Phase, snap map[string]engine.Status
 	m.push(runFinishedMsg{err: nil})
 }
 
+// startScale launches a goroutine that onboards a single already-registered node
+// into the running cluster via the scale pipeline (engine.ScaleSteps), limited to
+// that host. It returns immediately; progress arrives via the events channel.
+func (m *Model) startScale(name string) tea.Cmd {
+	return func() tea.Msg {
+		go m.runScaleSequence(name)
+		return infoMsg("onboarding " + name + "…")
+	}
+}
+
+// runScaleSequence runs the scale steps for one node. Unlike runSequence it is
+// stateless (it never consults or records the deploy run-state), so it can be
+// re-run for the same or other nodes; the steps are idempotent. It sets
+// runner.ScaleHosts so {{SCALE_LIMIT}}/{{SCALE_NODES}} target only this node.
+func (m *Model) runScaleSequence(name string) {
+	ctx := context.Background()
+
+	var rl *runlog.Logger
+	if m.logDir != "" {
+		if l, err := runlog.New(m.logDir); err == nil {
+			rl = l
+			defer rl.Close()
+			m.push(logMsg("logging to " + rl.Dir()))
+		}
+	}
+
+	if err := m.ssh.Connect(ctx); err != nil {
+		m.push(logMsg("connect failed: " + err.Error()))
+		m.push(runFinishedMsg{err: err})
+		return
+	}
+
+	m.runner.ScaleHosts = []string{name}
+	defer func() { m.runner.ScaleHosts = nil }()
+
+	m.push(logMsg(fmt.Sprintf("══ scale: onboard %s ══", name)))
+	rl.Event("══ scale: onboard %s ══", name)
+	for _, st := range engine.ScaleSteps() {
+		if st.Optional {
+			m.push(logMsg("  (skipped optional) " + st.Title))
+			continue
+		}
+		if err := m.runScaleStep(ctx, st, rl); err != nil {
+			m.push(logMsg("  ✗ " + st.Title + ": " + err.Error()))
+			m.push(runFinishedMsg{err: err})
+			return
+		}
+	}
+	m.push(runFinishedMsg{err: nil})
+}
+
+// runScaleStep runs one scale step, streaming its output to the log. It mirrors
+// runStep but does not write the deploy run-state (scale is stateless).
+func (m *Model) runScaleStep(ctx context.Context, st engine.Step, rl *runlog.Logger) error {
+	m.push(logMsg("▶ " + st.Title))
+	rl.Event("▶ %s — %s", st.ID, st.Title)
+	stepW, closeStep := rl.Step(st.ID)
+	err := m.runner.RunStep(ctx, st, func(l string) {
+		m.push(logMsg("    " + l))
+		stepW(l)
+	})
+	closeStep()
+	if err != nil {
+		rl.Event("✗ %s: %v", st.ID, err)
+	} else {
+		rl.Event("✓ %s", st.ID)
+	}
+	return err
+}
+
 // runStep executes one step, forwarding its output as log messages (and to the
 // run logger, if any). It blocks until the command exits.
 func (m *Model) runStep(ctx context.Context, st engine.Step, rl *runlog.Logger) error {
@@ -395,6 +465,20 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			_ = m.cluster.Save(m.cfgPath)
 			m.appendLog("removed node " + name)
+		}
+
+	case "s":
+		// onboard the focused node into a running cluster (scale)
+		if m.focus == focusNodes && !m.running && len(m.cluster.Nodes) > 0 {
+			n := m.cluster.Nodes[m.nodeIdx]
+			if n.IsController() {
+				m.status = "scale: " + n.Name + " is a controller (unsupported)"
+				m.appendLog(m.status)
+				break
+			}
+			m.running = true
+			m.status = "onboarding " + n.Name + "…"
+			return m, m.startScale(n.Name)
 		}
 
 	case "enter":
@@ -649,7 +733,7 @@ func (m *Model) formView() string {
 }
 
 func (m *Model) footer() string {
-	keys := "c connect · g inventory · o overrides · a add · d del · enter run phase · R run all · tab focus · q quit"
+	keys := "c connect · g inventory · o overrides · a add · d del · s onboard · enter run phase · R run all · tab focus · q quit"
 	run := ""
 	if m.running {
 		run = runStyle.Render(" [running] ")
