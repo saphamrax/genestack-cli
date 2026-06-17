@@ -58,6 +58,36 @@ func TestScaleKeyRejectsController(t *testing.T) {
 	}
 }
 
+func TestNodesViewShowsRolesAndNewMarker(t *testing.T) {
+	c := model.NewCluster("lab")
+	c.Nodes = []model.Node{
+		{Name: "ctl01", AnsibleHost: "10.0.0.51", Roles: []model.Role{model.RoleController}},
+		{Name: "cmp01", AnsibleHost: "10.0.0.54", Roles: []model.Role{model.RoleCompute, model.RoleNetwork}},
+	}
+	m := New(c, "cluster.yaml", "")
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	// Roles render as readable abbreviations (not ambiguous single letters).
+	out := m.View()
+	for _, want := range []string{"ctl", "cmp,net"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("nodes view missing role tag %q", want)
+		}
+	}
+
+	// Without cluster data (joined == nil) nothing is flagged NEW.
+	if strings.Contains(out, "NEW") {
+		t.Error("no NEW marker expected before the cluster is queried")
+	}
+
+	// With a known joined set, the absent node is flagged NEW; the joined one is not.
+	m.joined = map[string]bool{"ctl01": true}
+	out = m.View()
+	if !strings.Contains(out, "NEW") {
+		t.Error("expected cmp01 (not joined) to be flagged NEW")
+	}
+}
+
 func TestExpandPlaceholders(t *testing.T) {
 	c := model.NewCluster("lab")
 	c.Region = "RegionTwo"

@@ -79,6 +79,11 @@ $EDITOR cluster.yaml                              # set deployment.host, region,
 | `pgup/pgdown` | scroll logs |
 | `q` | quit |
 
+The Nodes pane shows each node's roles (`ctl`/`cmp`/`net`/`sto`). After you
+connect, nodes that are in `cluster.yaml` but **not yet joined** to the running
+cluster are flagged `NEW` — onboard them with `s`. (The list refreshes on connect
+and after each run.)
+
 Optional steps (Ceph, NetApp, Octavia, image upload) are **skipped** on a bulk
 `R` run and must be triggered deliberately.
 

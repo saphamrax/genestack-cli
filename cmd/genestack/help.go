@@ -376,7 +376,10 @@ USAGE
   genestack                              # tui is the default command
 
 DESCRIPTION
-  Opens a three-pane dashboard (nodes / phases / live logs). Keys:
+  Opens a three-pane dashboard (nodes / phases / live logs). The nodes pane shows
+  each node's roles (ctl/cmp/net/sto) and, once connected, flags nodes that are in
+  cluster.yaml but not yet joined to the running cluster as NEW (onboard with 's').
+  Keys:
     tab        switch focus (nodes <-> phases)
     up/down    navigate
     enter      run the selected phase

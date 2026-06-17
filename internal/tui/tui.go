@@ -46,6 +46,11 @@ type stepStatusMsg struct {
 }
 type runFinishedMsg struct{ err error }
 type uploadResultMsg struct{ err error }
+
+// nodeStatusMsg carries the set of node names currently joined to the running
+// Kubernetes cluster (from `kubectl get nodes`). joined is nil when the query
+// failed (e.g. no cluster yet), in which case no NEW markers are shown.
+type nodeStatusMsg struct{ joined map[string]bool }
 type overridesResultMsg struct {
 	err   error
 	count int
@@ -76,6 +81,11 @@ type Model struct {
 	connected bool
 	running   bool
 	status    string
+
+	// joined is the set of node names currently in the running k8s cluster,
+	// refreshed on connect and after each run. nil means "not yet known" (no
+	// NEW markers); a node in cluster.yaml but absent here is flagged NEW.
+	joined map[string]bool
 
 	// add-node form overlay
 	formActive bool
@@ -145,6 +155,42 @@ func (m *Model) connectCmd() tea.Cmd {
 	return func() tea.Msg {
 		err := m.ssh.Connect(context.Background())
 		return connectResultMsg{err: err}
+	}
+}
+
+// refreshNodesCmd queries the running cluster for its joined node names so the
+// Nodes pane can flag any cluster.yaml node that has not been onboarded yet. A
+// failed query (no cluster, no kubeconfig) yields a nil set and no markers.
+func (m *Model) refreshNodesCmd() tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		if err := m.ssh.Connect(ctx); err != nil {
+			return nodeStatusMsg{joined: nil}
+		}
+		out := make(chan string, 64)
+		var lines []string
+		done := make(chan error, 1)
+		go func() {
+			done <- m.ssh.RunStream(ctx, "kubectl get nodes -o name 2>/dev/null", out)
+			close(out)
+		}()
+		for l := range out {
+			lines = append(lines, l)
+		}
+		if err := <-done; err != nil {
+			return nodeStatusMsg{joined: nil}
+		}
+		set := map[string]bool{}
+		for _, l := range lines {
+			name := strings.TrimPrefix(strings.TrimSpace(l), "node/")
+			if name != "" {
+				set[name] = true
+			}
+		}
+		if len(set) == 0 {
+			return nodeStatusMsg{joined: nil} // unknown rather than "all new"
+		}
+		return nodeStatusMsg{joined: set}
 	}
 }
 
@@ -357,6 +403,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.connected = true
 			m.status = "connected to " + m.cluster.Deployment.Host
 			m.appendLog("connected to " + m.cluster.Deployment.Host)
+			return m, tea.Batch(m.waitForEvent(), m.refreshNodesCmd())
 		}
 		return m, m.waitForEvent()
 
@@ -386,6 +433,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state.Set(msg.id, msg.status)
 		return m, m.waitForEvent()
 
+	case nodeStatusMsg:
+		m.joined = msg.joined
+		return m, m.waitForEvent()
+
 	case logMsg:
 		m.appendLog(string(msg))
 		return m, m.waitForEvent()
@@ -403,7 +454,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = "run finished ✓"
 		}
 		m.appendLog("── " + m.status + " ──")
-		return m, m.waitForEvent()
+		return m, tea.Batch(m.waitForEvent(), m.refreshNodesCmd())
 	}
 
 	return m, nil
@@ -612,7 +663,32 @@ var (
 	okStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	runStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	failStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	newStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("214"))
 )
+
+// roleAbbr maps a role to a compact, unambiguous tag for the Nodes pane.
+var roleAbbr = map[model.Role]string{
+	model.RoleController: "ctl",
+	model.RoleCompute:    "cmp",
+	model.RoleNetwork:    "net",
+	model.RoleStorage:    "sto",
+}
+
+// roleTags renders a node's roles as comma-joined abbreviations (e.g. "cmp,net").
+func roleTags(roles []model.Role) string {
+	if len(roles) == 0 {
+		return "?"
+	}
+	out := make([]string, 0, len(roles))
+	for _, r := range roles {
+		if a, ok := roleAbbr[r]; ok {
+			out = append(out, a)
+		} else {
+			out = append(out, string(r))
+		}
+	}
+	return strings.Join(out, ",")
+}
 
 func statusStyle(s engine.Status) lipgloss.Style {
 	switch s {
@@ -679,15 +755,17 @@ func (m *Model) nodesView(w, h int) string {
 		return b.String()
 	}
 	for i, n := range m.cluster.Nodes {
-		roles := make([]string, 0, len(n.Roles))
-		for _, r := range n.Roles {
-			roles = append(roles, string(r)[:1])
+		line := fmt.Sprintf("%-12s %-15s %s", trunc(n.Name, 12), n.AnsibleHost, roleTags(n.Roles))
+		// Flag nodes that are in cluster.yaml but not yet joined to the running
+		// cluster (candidates for onboarding with 's'). Only when we have data.
+		tag := ""
+		if m.joined != nil && !m.joined[n.Name] {
+			tag = " " + newStyle.Render("NEW")
 		}
-		line := fmt.Sprintf("%-12s %-15s [%s]", trunc(n.Name, 12), n.AnsibleHost, strings.Join(roles, ""))
 		if m.focus == focusNodes && i == m.nodeIdx {
-			b.WriteString(selectedStyle.Render("› "+line) + "\n")
+			b.WriteString(selectedStyle.Render("› "+line) + tag + "\n")
 		} else {
-			b.WriteString("  " + line + "\n")
+			b.WriteString("  " + line + tag + "\n")
 		}
 	}
 	return b.String()
