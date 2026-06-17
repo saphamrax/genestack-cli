@@ -19,8 +19,8 @@ deployment host).
   [`overrides-cinder-glance.yaml`](examples/storage/overrides-cinder-glance.yaml),
   [`ceph-secrets.yaml`](examples/storage/ceph-secrets.yaml).
 - **[Demo](demo/demo.html)** — an asciinema recording of the CLI in action.
-- **[Genestack manual](manual-installation.html)** — the upstream manual install this
-  tool wraps (source of truth for the real steps).
+- **[Genestack manual](https://github.com/rackerlabs/genestack)** — the upstream manual
+  install this tool wraps (source of truth for the real steps).
 
 ## Quick start
 

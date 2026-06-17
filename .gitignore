@@ -22,6 +22,10 @@ logs/
 # editor
 .DS_Store
 
+# vendored / operator reference docs (kept locally, not in the repo)
+/docs/manual-installation.html
+/docs/add_node.md
+
 # asciinema recordings (may capture live host data — keep raw ones out of the repo)
 *.cast
 !docs/demo/demo.cast
