@@ -222,6 +222,7 @@ func cmdRun(cfgPath string, args []string) error {
 	dry := fs.Bool("dry-run", false, "print commands without running them")
 	logDir := fs.String("log-dir", "", "directory for run logs (default: <config dir>/logs)")
 	noLog := fs.Bool("no-log", false, "do not write run logs to disk")
+	gsVersion := fs.String("genestack-version", "", "genestack git ref to checkout (overrides cluster.yaml)")
 	targets, err := parseInterspersed(fs, args)
 	if err != nil {
 		return err
@@ -230,6 +231,9 @@ func cmdRun(cfgPath string, args []string) error {
 	c, err := loadCluster(cfgPath)
 	if err != nil {
 		return err
+	}
+	if *gsVersion != "" {
+		c.GenestackVersion = *gsVersion
 	}
 	state := engine.LoadState(statePathFor(cfgPath))
 	phases := engine.DefaultPhases()

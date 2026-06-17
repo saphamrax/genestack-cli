@@ -283,31 +283,37 @@ func (o *Overrides) fillDefaults() {
 }
 
 // Cluster is the top-level configuration object persisted to cluster.yaml.
+// DefaultGenestackVersion is the genestack git ref (release tag/branch) checked
+// out into /opt/genestack when cluster.yaml does not pin one.
+const DefaultGenestackVersion = "release-2025.4"
+
 type Cluster struct {
-	Name        string        `yaml:"name"`
-	Region      string        `yaml:"region"`       // e.g. RegionOne
-	Domain      string        `yaml:"domain"`       // OpenStack API domain, e.g. api.openstack.example.com
-	AnsiblePort int           `yaml:"ansible_port"` // ansible_port for all hosts
-	Deployment  Deployment    `yaml:"deployment"`
-	K8s         K8sVars       `yaml:"k8s"`
-	MetalLB     MetalLBConfig `yaml:"metallb"`
-	OVN         OVNConfig     `yaml:"ovn"`
-	Overrides   Overrides     `yaml:"overrides"`
-	Nodes       []Node        `yaml:"nodes"`
+	Name             string        `yaml:"name"`
+	Region           string        `yaml:"region"`                      // e.g. RegionOne
+	Domain           string        `yaml:"domain"`                      // OpenStack API domain, e.g. api.openstack.example.com
+	GenestackVersion string        `yaml:"genestack_version,omitempty"` // genestack git ref to checkout, e.g. release-2025.4
+	AnsiblePort      int           `yaml:"ansible_port"`                // ansible_port for all hosts
+	Deployment       Deployment    `yaml:"deployment"`
+	K8s              K8sVars       `yaml:"k8s"`
+	MetalLB          MetalLBConfig `yaml:"metallb"`
+	OVN              OVNConfig     `yaml:"ovn"`
+	Overrides        Overrides     `yaml:"overrides"`
+	Nodes            []Node        `yaml:"nodes"`
 }
 
 // NewCluster returns a Cluster populated with manual-derived defaults.
 func NewCluster(name string) *Cluster {
 	return &Cluster{
-		Name:        name,
-		Region:      "RegionOne",
-		Domain:      "api.openstack.example.com",
-		AnsiblePort: 22,
-		Deployment:  Deployment{User: "root", Port: 22},
-		K8s:         DefaultK8sVars(),
-		MetalLB:     DefaultMetalLB(),
-		OVN:         DefaultOVN(),
-		Overrides:   DefaultOverrides(),
+		Name:             name,
+		Region:           "RegionOne",
+		Domain:           "api.openstack.example.com",
+		GenestackVersion: DefaultGenestackVersion,
+		AnsiblePort:      22,
+		Deployment:       Deployment{User: "root", Port: 22},
+		K8s:              DefaultK8sVars(),
+		MetalLB:          DefaultMetalLB(),
+		OVN:              DefaultOVN(),
+		Overrides:        DefaultOverrides(),
 	}
 }
 
@@ -440,6 +446,9 @@ func Load(path string) (*Cluster, error) {
 	var c Cluster
 	if err := yaml.Unmarshal(b, &c); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if c.GenestackVersion == "" {
+		c.GenestackVersion = DefaultGenestackVersion
 	}
 	if c.AnsiblePort == 0 {
 		c.AnsiblePort = 22

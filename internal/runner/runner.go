@@ -31,6 +31,7 @@ func (r *Runner) Expand(cmd string) string {
 	repl := strings.NewReplacer(
 		"{{REGION}}", c.Region,
 		"{{DOMAIN}}", c.Domain,
+		"{{GENESTACK_VERSION}}", c.GenestackVersion,
 		"{{OVN_INT_BRIDGE}}", c.OVN.IntBridge,
 		"{{OVN_BRIDGES}}", c.OVN.Bridges,
 		"{{OVN_PORTS}}", c.OVN.Ports,

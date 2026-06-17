@@ -98,8 +98,8 @@ func DefaultPhases() []Phase {
 			Steps: []Step{
 				{ID: "config.clone", Title: "Clone genestack into /opt/genestack",
 					Cmd: "test -d /opt/genestack/.git || git clone --recurse-submodules -j4 https://github.com/rackerlabs/genestack /opt/genestack"},
-				{ID: "config.checkout", Title: "Checkout release-2025.4",
-					Cmd: "cd /opt/genestack && git checkout release-2025.4"},
+				{ID: "config.checkout", Title: "Checkout genestack version",
+					Cmd: "cd /opt/genestack && git fetch --all --tags && git checkout {{GENESTACK_VERSION}}"},
 				{ID: "config.bootstrap", Title: "Run genestack bootstrap.sh",
 					Cmd: "/opt/genestack/bootstrap.sh"},
 				{ID: "config.opsbootstrap", Title: "Run openstack-ops bootstrap.sh",

@@ -55,7 +55,7 @@ skip done steps. `genestack phases` / `genestack steps [phase]` show status.
 
 ## Placeholders (expanded by `runner.Expand`)
 
-`{{REGION}}` `{{DOMAIN}}` `{{OVN_INT_BRIDGE}}` `{{OVN_BRIDGES}}` `{{OVN_PORTS}}`
+`{{REGION}}` `{{DOMAIN}}` `{{GENESTACK_VERSION}}` `{{OVN_INT_BRIDGE}}` `{{OVN_BRIDGES}}` `{{OVN_PORTS}}`
 `{{OVN_MAPPINGS}}` `{{OVN_AZ}}` `{{KUBE_OVN_IFACE}}` `{{KUBE_PODS_SUBNET}}`
 `{{KUBE_SERVICE_CIDR}}` `{{CONTROLLER_NODES}}`
 `{{COMPUTE_NODES}}` `{{DEPLOY_NODE}}` — all sourced from `cluster.yaml`. Use these
@@ -66,7 +66,7 @@ deployment host is also a cluster node (else ""); see the reboot gotcha below.
 ## cluster.yaml (model) — key fields
 
 ```yaml
-name, region, domain, ansible_port
+name, region, domain, genestack_version, ansible_port
 deployment: {mode: ssh|local, host, user, port, key_path}
 k8s: {cluster_name, kube_ovn_iface, kube_service_addresses, kube_pods_subnet}
 metallb: {external_pool, internal_pool, interface}

@@ -288,6 +288,9 @@ FLAGS
   --dry-run        print the exact commands without running them
   --log-dir DIR    where to write run logs (default: <config dir>/logs)
   --no-log         do not write run logs to disk
+  --genestack-version REF
+                   genestack git ref (release tag/branch) to checkout into
+                   /opt/genestack, overriding cluster.yaml's genestack_version
 
 LOGS
   Each run writes to <log-dir>/<timestamp>/: one <step-id>.log per step plus a

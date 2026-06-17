@@ -124,6 +124,7 @@ Tune the modelled knobs in `cluster.yaml`:
 ```yaml
 domain: api.openstack.example.com   # drives every <service>.<domain> host
 region: RegionOne
+genestack_version: release-2025.4   # genestack git ref to checkout (optional)
 metallb:                            # MetalLB IP pools (manifests/metallb/...)
   external_pool: 10.230.0.10/32
   internal_pool: 10.230.0.128/25
@@ -166,7 +167,9 @@ genestack reset TARGET... [flags]
 `TARGET` is a **phase id** (e.g. `kubernetes`) or a **step id** (e.g.
 `k8s.cluster`); list them with `genestack steps`. Flags for `run`/`reset`:
 `--all`, `--from PHASE`, `--to PHASE`; `run` also takes `--force` (re-run done
-steps), `--optional` (include optional steps) and `--dry-run`.
+steps), `--optional` (include optional steps), `--dry-run` and
+`--genestack-version REF` (override the genestack git ref to checkout, e.g.
+`release-2025.4`; otherwise from `cluster.yaml`'s `genestack_version`).
 
 ```bash
 genestack run --all                       # whole deployment, resumes, skips done

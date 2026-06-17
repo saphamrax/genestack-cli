@@ -144,6 +144,7 @@ Set, at minimum:
 name: prod
 region: RegionOne
 domain: api.openstack.example.com    # drives every <service>.<domain> public host
+# genestack_version: release-2025.4  # optional: pin the genestack git ref (release tag/branch)
 
 deployment:
   mode: ssh                          # or "local" to run on the deployment node
@@ -428,7 +429,7 @@ Deploy:
   phases                                 list phases + status
   steps [PHASE]                          list steps + status
   status                                 progress summary
-  run TARGET... [--all --from P --to P --force --optional --dry-run]
+  run TARGET... [--all --from P --to P --force --optional --dry-run --genestack-version REF]
   reset TARGET... [--all --from P --to P]
   tui                                    launch the terminal UI
 
@@ -443,6 +444,7 @@ TARGET = phase id (e.g. kubernetes) or step id (e.g. k8s.cluster).
 name: string
 region: string                 # e.g. RegionOne
 domain: string                 # e.g. api.openstack.example.com
+genestack_version: string      # genestack git ref checked out into /opt/genestack; default release-2025.4
 ansible_port: int              # default 22
 
 deployment:
